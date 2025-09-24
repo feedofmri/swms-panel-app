@@ -12,6 +12,7 @@ import 'features/dashboard/view/dashboard_screen.dart';
 import 'features/alerts/view/alerts_screen.dart';
 import 'features/controls/view/controls_screen.dart';
 import 'features/settings/view/settings_screen.dart';
+import 'features/esp_monitor/view/esp_monitor_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -111,6 +112,7 @@ class _MainScreenState extends State<MainScreen> {
     AlertsScreen(),
     ControlsScreen(),
     SettingsScreen(),
+    EspMonitorScreen(),
   ];
 
   @override
@@ -175,6 +177,10 @@ class _MainScreenState extends State<MainScreen> {
               const BottomNavigationBarItem(
                 icon: Icon(Icons.settings),
                 label: 'Settings',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.monitor),
+                label: 'ESP Monitor',
               ),
             ],
           );

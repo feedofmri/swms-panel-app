@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
 import '../models/sensor_data.dart';
+import '../models/esp_serial_data.dart';
 
 /// Service for managing WebSocket connection to ESP8266
 class WebSocketService extends ChangeNotifier {
@@ -28,6 +29,10 @@ class WebSocketService extends ChangeNotifier {
   final StreamController<String> _rawMessageController =
       StreamController<String>.broadcast();
 
+  // New stream controller for ESP serial data
+  final StreamController<EspSerialData> _espSerialDataController =
+      StreamController<EspSerialData>.broadcast();
+
   // Getters
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
@@ -35,6 +40,7 @@ class WebSocketService extends ChangeNotifier {
   String? get espIpAddress => _espIpAddress;
   Stream<SensorData> get sensorDataStream => _sensorDataController.stream;
   Stream<String> get rawMessageStream => _rawMessageController.stream;
+  Stream<EspSerialData> get espSerialDataStream => _espSerialDataController.stream;
 
   /// Connect to ESP8266 WebSocket server
   Future<void> connect(String ipAddress) async {
@@ -108,16 +114,46 @@ class WebSocketService extends ChangeNotifier {
       // Add to raw message stream
       _rawMessageController.add(message);
 
-      // Parse JSON and create SensorData
-      final jsonData = json.decode(message.trim());
-      if (jsonData is Map<String, dynamic>) {
-        final sensorData = SensorData.fromJson(jsonData);
-        _sensorDataController.add(sensorData);
-        debugPrint('WebSocket: Parsed sensor data: $sensorData');
+      // Try to parse as JSON first (for structured sensor data)
+      try {
+        final jsonData = json.decode(message.trim());
+        if (jsonData is Map<String, dynamic>) {
+          final sensorData = SensorData.fromJson(jsonData);
+          _sensorDataController.add(sensorData);
+          debugPrint('WebSocket: Parsed sensor data: $sensorData');
+          return;
+        } else if (jsonData is List) {
+          // Handle list of sensor data
+          for (var item in jsonData) {
+            if (item is Map<String, dynamic>) {
+              final sensorData = SensorData.fromJson(item);
+              _sensorDataController.add(sensorData);
+              debugPrint('WebSocket: Parsed sensor data: $sensorData');
+            }
+          }
+          return;
+        }
+      } catch (jsonError) {
+        // Not JSON, treat as raw ESP8266 serial data
+        debugPrint('WebSocket: Message is not JSON, treating as ESP serial data');
       }
+
+      // Handle raw ESP8266 serial data
+      final espSerialData = EspSerialData.fromRawMessage(message.trim());
+      _espSerialDataController.add(espSerialData);
+      debugPrint('WebSocket: Parsed ESP serial data: $espSerialData');
+
     } catch (e) {
       debugPrint('WebSocket: Failed to parse message: $e');
       debugPrint('WebSocket: Raw message was: $message');
+
+      // Even if parsing fails, still try to create ESP serial data
+      try {
+        final espSerialData = EspSerialData.fromRawMessage(message.trim());
+        _espSerialDataController.add(espSerialData);
+      } catch (e2) {
+        debugPrint('WebSocket: Failed to create ESP serial data: $e2');
+      }
     }
   }
 
@@ -237,6 +273,7 @@ class WebSocketService extends ChangeNotifier {
     disconnect();
     _sensorDataController.close();
     _rawMessageController.close();
+    _espSerialDataController.close();
     super.dispose();
   }
 }
