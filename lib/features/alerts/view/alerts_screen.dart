@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/models/alert.dart';
 import '../../../core/utils/app_theme.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/utils/constants.dart';
@@ -18,7 +17,7 @@ class AlertsScreen extends StatefulWidget {
 }
 
 class _AlertsScreenState extends State<AlertsScreen> {
-  AlertLevel? _selectedFilter;
+  AlertSeverity? _selectedFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -106,12 +105,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
       floatingActionButton: Consumer<AlertsViewModel>(
         builder: (context, viewModel, child) {
           // Show FAB only if there are unread alerts
-          if (viewModel.unreadAlerts.isEmpty) return const SizedBox.shrink();
+          if (viewModel.unreadAlerts == 0) return const SizedBox.shrink();
 
           return FloatingActionButton.extended(
             onPressed: () => viewModel.markAllAlertsAsRead(),
             icon: const Icon(Icons.mark_email_read),
-            label: Text('Mark ${viewModel.unreadAlerts.length} Read'),
+            label: Text('Mark ${viewModel.unreadAlerts} Read'),
           );
         },
       ),
@@ -190,7 +189,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   /// Get filtered alerts based on selected filter
-  List<Alert> _getFilteredAlerts(AlertsViewModel viewModel) {
+  List<AlertData> _getFilteredAlerts(AlertsViewModel viewModel) {
     if (_selectedFilter == null) {
       return viewModel.alerts;
     }
@@ -205,7 +204,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   ) async {
     switch (action) {
       case 'mark_all_read':
-        await viewModel.markAllAlertsAsRead();
+        viewModel.markAllAlertsAsRead(); // Remove await since it returns void
         if (context.mounted) {
           AppHelpers.showSuccessSnackBar(context, 'All alerts marked as read');
         }
@@ -223,8 +222,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   /// Handle alert tap
-  void _handleAlertTap(BuildContext context, AlertsViewModel viewModel, Alert alert) {
-    if (!alert.isRead) {
+  void _handleAlertTap(BuildContext context, AlertsViewModel viewModel, AlertData alert) {
+    if (!alert.isAcknowledged) {
       viewModel.markAlertAsRead(alert.id);
     }
 
@@ -236,11 +235,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Future<void> _handleAlertDelete(
     BuildContext context,
     AlertsViewModel viewModel,
-    Alert alert,
+    AlertData alert,
   ) async {
     final confirmed = await _showDeleteConfirmationDialog(context, alert);
     if (confirmed == true) {
-      await viewModel.deleteAlert(alert.id);
+      viewModel.deleteAlert(alert.id);
       if (context.mounted) {
         AppHelpers.showSuccessSnackBar(context, 'Alert deleted');
       }
@@ -248,18 +247,18 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   /// Show alert details dialog
-  void _showAlertDetailsDialog(BuildContext context, Alert alert) {
+  void _showAlertDetailsDialog(BuildContext context, AlertData alert) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
           children: [
             Icon(
-              _getAlertIcon(alert.level),
-              color: _getAlertColor(alert.level),
+              _getAlertIcon(alert.severity),
+              color: _getAlertColor(alert.severity),
             ),
             const SizedBox(width: 8),
-            Text(alert.level.displayName),
+            Text(alert.severity.name.toUpperCase()),
           ],
         ),
         content: Column(
@@ -275,13 +274,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
               'Time: ${AppHelpers.formatDetailedTimestamp(alert.timestamp)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            if (alert.source != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Source: ${alert.source}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
           ],
         ),
         actions: [
@@ -295,7 +287,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   /// Show delete confirmation dialog
-  Future<bool?> _showDeleteConfirmationDialog(BuildContext context, Alert alert) {
+  Future<bool?> _showDeleteConfirmationDialog(BuildContext context, AlertData alert) {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -336,38 +328,34 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
 
     if (confirmed == true) {
-      await viewModel.clearAllAlerts();
+      viewModel.clearAllAlerts();
       if (context.mounted) {
         AppHelpers.showSuccessSnackBar(context, 'All alerts cleared');
       }
     }
   }
 
-  /// Get alert icon based on level
-  IconData _getAlertIcon(AlertLevel level) {
-    switch (level) {
-      case AlertLevel.info:
+  /// Get alert icon based on severity
+  IconData _getAlertIcon(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
         return Icons.info;
-      case AlertLevel.warning:
+      case AlertSeverity.warning:
         return Icons.warning;
-      case AlertLevel.critical:
+      case AlertSeverity.critical:
         return Icons.error;
-      case AlertLevel.emergency:
-        return Icons.emergency;
     }
   }
 
-  /// Get alert color based on level
-  Color _getAlertColor(AlertLevel level) {
-    switch (level) {
-      case AlertLevel.info:
+  /// Get alert color based on severity
+  Color _getAlertColor(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
         return Colors.blue;
-      case AlertLevel.warning:
+      case AlertSeverity.warning:
         return AppTheme.warningColor;
-      case AlertLevel.critical:
+      case AlertSeverity.critical:
         return AppTheme.errorColor;
-      case AlertLevel.emergency:
-        return Colors.deepOrange;
     }
   }
 }

@@ -2,289 +2,280 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../core/services/websocket_service.dart';
 import '../../../core/services/storage_service.dart';
-import '../../../core/utils/helpers.dart';
-import '../../../core/utils/constants.dart';
 import '../model/settings_model.dart';
 
-/// ViewModel for the Settings screen following MVVM pattern
 class SettingsViewModel extends ChangeNotifier {
   final WebSocketService _webSocketService;
   final StorageService _storageService;
 
-  SettingsModel _model = SettingsModel();
-  SettingsModel _originalModel = SettingsModel();
+  SettingsModel _settings = SettingsModel();
+  bool _isLoading = false;
 
   SettingsViewModel({
     required WebSocketService webSocketService,
     required StorageService storageService,
   }) : _webSocketService = webSocketService,
        _storageService = storageService {
-    _initialize();
+    _loadSettings();
   }
 
-  // Getters
-  SettingsModel get model => _model;
-  String get espIpAddress => _model.espIpAddress;
-  double get reservoirMinLevel => _model.reservoirMinLevel;
-  double get turbidityMax => _model.turbidityMax;
-  bool get isConnected => _model.isConnected;
-  bool get hasUnsavedChanges => _model.hasUnsavedChanges;
-  bool get isValid => _model.isValid;
-  List<String> get validationErrors => _model.validationErrors;
-  String? get lastSavedTimestamp => _model.lastSavedTimestamp;
+  // Basic getters
+  SettingsModel get settings => _settings;
+  bool get isLoading => _isLoading;
+  bool get isConnected => _webSocketService.isConnected;
+  String get connectionStatus => _webSocketService.connectionStatus;
+  String? get currentEspIp => _webSocketService.espIpAddress;
 
-  /// Initialize settings
-  Future<void> _initialize() async {
-    await _loadSettings();
-    _listenToConnectionChanges();
+  // UI-expected getters
+  String get espIpAddress => _settings.espIpAddress;
+  bool get hasUnsavedChanges => _settings.hasUnsavedChanges;
+  bool get isValid => _settings.isValid;
+  List<String> get validationErrors => _settings.validationErrors;
+  String? get lastSavedTimestamp => _settings.lastSavedTimestamp;
+  double get reservoirMinLevel => _settings.reservoirMinLevel;
+  double get turbidityMax => _settings.turbidityMax;
+
+  // Threshold getters for UI widgets
+  double get lowWaterThreshold => _settings.lowWaterThreshold;
+  double get highTurbidityThreshold => _settings.highTurbidityThreshold;
+  double get lowBatteryThreshold => _settings.lowBatteryThreshold;
+  bool get alertsEnabled => _settings.alertsEnabled;
+  bool get soundEnabled => _settings.soundEnabled;
+  bool get vibrationEnabled => _settings.vibrationEnabled;
+
+  // Callback getters for UI widgets (return functions that update settings)
+  Function(double) get updateReservoirMinLevel => (double value) {
+    _settings = _settings.copyWith(
+      reservoirMinLevel: value,
+      hasUnsavedChanges: true,
+    );
+    notifyListeners();
+  };
+
+  Function(double) get updateTurbidityMax => (double value) {
+    _settings = _settings.copyWith(
+      turbidityMax: value,
+      hasUnsavedChanges: true,
+    );
+    notifyListeners();
+  };
+
+  void discardChanges() {
+    _settings = _settings.copyWith(hasUnsavedChanges: false);
+    _loadSettings(); // Reload from storage
   }
 
-  /// Load settings from storage
+  String getSettingsSummary() {
+    return 'ESP: ${_settings.espIpAddress.isEmpty ? 'Not configured' : _settings.espIpAddress}\n'
+           'Reservoir Min: ${_settings.reservoirMinLevel}%\n'
+           'Turbidity Max: ${_settings.turbidityMax}\n'
+           'Alerts: ${_settings.alertsEnabled ? 'Enabled' : 'Disabled'}';
+  }
+
   Future<void> _loadSettings() async {
+    _isLoading = true;
+    notifyListeners();
+
     try {
-      final espIp = await _storageService.getEspIpAddress() ?? '';
-      final reservoirMin = await _storageService.getReservoirMinLevel();
-      final turbidityMax = await _storageService.getTurbidityMax();
+      final espIp = await _storageService.getEspIpAddress();
+      final thresholds = await _storageService.getThresholds();
+      final alertSettings = await _storageService.getAlertSettings();
 
-      final connectionSettings = await _storageService.getConnectionSettings();
-      final lastSaved = connectionSettings?['lastUpdated'];
-
-      _model = SettingsModel(
-        espIpAddress: espIp,
-        reservoirMinLevel: reservoirMin,
-        turbidityMax: turbidityMax,
-        isConnected: _webSocketService.isConnected,
-        lastSavedTimestamp: lastSaved,
+      _settings = _settings.copyWith(
+        espIpAddress: espIp ?? '',
+        lowWaterThreshold: thresholds?['lowWater'] ?? 20.0,
+        highTurbidityThreshold: thresholds?['highTurbidity'] ?? 10.0,
+        lowBatteryThreshold: thresholds?['lowBattery'] ?? 20.0,
+        alertsEnabled: alertSettings?['enabled'] ?? true,
+        soundEnabled: alertSettings?['sound'] ?? true,
+        vibrationEnabled: alertSettings?['vibration'] ?? true,
+        hasUnsavedChanges: false,
       );
-
-      _originalModel = _model;
-      notifyListeners();
-
-      debugPrint('SettingsViewModel: Loaded settings: $_model');
     } catch (e) {
-      debugPrint('SettingsViewModel: Failed to load settings: $e');
+      debugPrint('Error loading settings: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  /// Listen to WebSocket connection changes
-  void _listenToConnectionChanges() {
-    _webSocketService.addListener(_onConnectionStatusChanged);
+  bool validateIpAddress(String ipAddress) {
+    final ipRegex = RegExp(r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$');
+    return ipRegex.hasMatch(ipAddress);
   }
 
-  /// Handle WebSocket connection status changes
-  void _onConnectionStatusChanged() {
-    _updateModel(isConnected: _webSocketService.isConnected);
-  }
-
-  /// Update ESP IP address
-  void updateEspIpAddress(String ipAddress) {
-    _updateModel(
-      espIpAddress: ipAddress.trim(),
-      hasUnsavedChanges: true,
-    );
-  }
-
-  /// Update reservoir minimum level
-  void updateReservoirMinLevel(double level) {
-    _updateModel(
-      reservoirMinLevel: level,
-      hasUnsavedChanges: true,
-    );
-  }
-
-  /// Update turbidity maximum
-  void updateTurbidityMax(double turbidity) {
-    _updateModel(
-      turbidityMax: turbidity,
-      hasUnsavedChanges: true,
-    );
-  }
-
-  /// Validate IP address format
-  bool validateIpAddress(String ip) {
-    return AppHelpers.isValidIpAddress(ip);
-  }
-
-  /// Save settings
-  Future<bool> saveSettings() async {
-    if (!_model.isValid) {
-      debugPrint('SettingsViewModel: Cannot save invalid settings');
+  Future<bool> updateEspIpAddress(String ipAddress) async {
+    try {
+      await _storageService.saveEspIpAddress(ipAddress);
+      _settings = _settings.copyWith(
+        espIpAddress: ipAddress,
+        hasUnsavedChanges: false,
+        lastSavedTimestamp: DateTime.now().toIso8601String(),
+      );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error saving ESP IP address: $e');
       return false;
     }
+  }
 
+  Future<bool> updateThresholds({
+    double? lowWaterThreshold,
+    double? highTurbidityThreshold,
+    double? lowBatteryThreshold,
+  }) async {
     try {
-      // Save individual settings
-      await _storageService.saveEspIpAddress(_model.espIpAddress);
-      await _storageService.saveReservoirMinLevel(_model.reservoirMinLevel);
-      await _storageService.saveTurbidityMax(_model.turbidityMax);
+      final thresholds = <String, double>{
+        'lowWater': lowWaterThreshold ?? _settings.lowWaterThreshold,
+        'highTurbidity': highTurbidityThreshold ?? _settings.highTurbidityThreshold,
+        'lowBattery': lowBatteryThreshold ?? _settings.lowBatteryThreshold,
+      };
 
-      // Save connection settings
-      await _storageService.saveConnectionSettings(
-        ipAddress: _model.espIpAddress,
-        reservoirMinLevel: _model.reservoirMinLevel,
-        turbidityMax: _model.turbidityMax,
-      );
+      await _storageService.saveThresholds(thresholds);
 
-      _updateModel(
+      _settings = _settings.copyWith(
+        lowWaterThreshold: thresholds['lowWater'],
+        highTurbidityThreshold: thresholds['highTurbidity'],
+        lowBatteryThreshold: thresholds['lowBattery'],
         hasUnsavedChanges: false,
         lastSavedTimestamp: DateTime.now().toIso8601String(),
       );
 
-      _originalModel = _model;
-
-      debugPrint('SettingsViewModel: Settings saved successfully');
+      notifyListeners();
       return true;
     } catch (e) {
-      debugPrint('SettingsViewModel: Failed to save settings: $e');
+      debugPrint('Error saving thresholds: $e');
       return false;
     }
   }
 
-  /// Reset settings to defaults
-  void resetToDefaults() {
-    _updateModel(
-      espIpAddress: '',
-      reservoirMinLevel: AppConstants.defaultReservoirMinLevel,
-      turbidityMax: AppConstants.defaultTurbidityMax,
-      hasUnsavedChanges: true,
-    );
-  }
-
-  /// Discard unsaved changes
-  void discardChanges() {
-    _model = _originalModel.copyWith(
-      isConnected: _webSocketService.isConnected,
-    );
-    notifyListeners();
-  }
-
-  /// Test connection with current IP
-  Future<bool> testConnection() async {
-    if (_model.espIpAddress.isEmpty || !validateIpAddress(_model.espIpAddress)) {
-      debugPrint('SettingsViewModel: Invalid IP address for connection test');
-      return false;
-    }
-
+  Future<bool> updateAlertSettings({
+    bool? alertsEnabled,
+    bool? soundEnabled,
+    bool? vibrationEnabled,
+  }) async {
     try {
-      debugPrint('SettingsViewModel: Testing connection to ${_model.espIpAddress}');
+      final alertSettings = <String, bool>{
+        'enabled': alertsEnabled ?? _settings.alertsEnabled,
+        'sound': soundEnabled ?? _settings.soundEnabled,
+        'vibration': vibrationEnabled ?? _settings.vibrationEnabled,
+      };
 
-      // Disconnect current connection if any
-      if (_webSocketService.isConnected) {
-        _webSocketService.disconnect();
-        await Future.delayed(const Duration(seconds: 1));
-      }
+      await _storageService.saveAlertSettings(alertSettings);
 
-      // Attempt to connect
-      await _webSocketService.connect(_model.espIpAddress);
-
-      // Wait a moment to see if connection establishes
-      await Future.delayed(const Duration(seconds: 3));
-
-      final success = _webSocketService.isConnected;
-      debugPrint('SettingsViewModel: Connection test result: $success');
-
-      return success;
-    } catch (e) {
-      debugPrint('SettingsViewModel: Connection test error: $e');
-      return false;
-    }
-  }
-
-  /// Connect to ESP with current settings
-  Future<bool> connectToEsp() async {
-    if (!validateIpAddress(_model.espIpAddress)) {
-      debugPrint('SettingsViewModel: Invalid IP address for connection');
-      return false;
-    }
-
-    try {
-      await _webSocketService.connect(_model.espIpAddress);
-      debugPrint('SettingsViewModel: Connection initiated to ${_model.espIpAddress}');
-      return true;
-    } catch (e) {
-      debugPrint('SettingsViewModel: Failed to connect: $e');
-      return false;
-    }
-  }
-
-  /// Disconnect from ESP
-  void disconnectFromEsp() {
-    _webSocketService.disconnect();
-    debugPrint('SettingsViewModel: Disconnected from ESP');
-  }
-
-  /// Clear all stored data
-  Future<bool> clearAllData() async {
-    try {
-      await _storageService.clearAllData();
-
-      _model = SettingsModel(
-        isConnected: _webSocketService.isConnected,
+      _settings = _settings.copyWith(
+        alertsEnabled: alertSettings['enabled'],
+        soundEnabled: alertSettings['sound'],
+        vibrationEnabled: alertSettings['vibration'],
+        hasUnsavedChanges: false,
+        lastSavedTimestamp: DateTime.now().toIso8601String(),
       );
-      _originalModel = _model;
 
       notifyListeners();
-      debugPrint('SettingsViewModel: All data cleared');
       return true;
     } catch (e) {
-      debugPrint('SettingsViewModel: Failed to clear data: $e');
+      debugPrint('Error saving alert settings: $e');
       return false;
     }
   }
 
-  /// Get settings summary
-  Map<String, dynamic> getSettingsSummary() {
-    return {
-      'ESP IP': _model.espIpAddress.isNotEmpty ? _model.espIpAddress : 'Not set',
-      'Reservoir Min Level': '${_model.reservoirMinLevel.toStringAsFixed(1)}%',
-      'Turbidity Max': '${_model.turbidityMax.toStringAsFixed(1)} NTU',
-      'Connection Status': _model.isConnected ? 'Connected' : 'Disconnected',
-      'Settings Valid': _model.isValid ? 'Yes' : 'No',
-      'Unsaved Changes': _model.hasUnsavedChanges ? 'Yes' : 'No',
-      'Last Saved': _model.lastSavedTimestamp ?? 'Never',
-    };
+  Future<bool> saveSettings() async {
+    try {
+      // Save all settings
+      await Future.wait([
+        updateEspIpAddress(_settings.espIpAddress),
+        updateThresholds(
+          lowWaterThreshold: _settings.lowWaterThreshold,
+          highTurbidityThreshold: _settings.highTurbidityThreshold,
+          lowBatteryThreshold: _settings.lowBatteryThreshold,
+        ),
+        updateAlertSettings(
+          alertsEnabled: _settings.alertsEnabled,
+          soundEnabled: _settings.soundEnabled,
+          vibrationEnabled: _settings.vibrationEnabled,
+        ),
+      ]);
+
+      _settings = _settings.copyWith(
+        hasUnsavedChanges: false,
+        lastSavedTimestamp: DateTime.now().toIso8601String(),
+      );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error saving settings: $e');
+      return false;
+    }
   }
 
-  /// Update the model and notify listeners
-  void _updateModel({
-    String? espIpAddress,
-    double? reservoirMinLevel,
-    double? turbidityMax,
-    bool? isConnected,
-    bool? hasUnsavedChanges,
-    String? lastSavedTimestamp,
-  }) {
-    final wasValid = _model.isValid;
-
-    _model = _model.copyWith(
-      espIpAddress: espIpAddress,
-      reservoirMinLevel: reservoirMinLevel,
-      turbidityMax: turbidityMax,
-      isConnected: isConnected,
-      hasUnsavedChanges: hasUnsavedChanges,
-      lastSavedTimestamp: lastSavedTimestamp,
-    );
-
-    // Check if we need to recalculate unsaved changes
-    if (hasUnsavedChanges == null && (espIpAddress != null ||
-        reservoirMinLevel != null || turbidityMax != null)) {
-      final hasChanges = _model.espIpAddress != _originalModel.espIpAddress ||
-                        _model.reservoirMinLevel != _originalModel.reservoirMinLevel ||
-                        _model.turbidityMax != _originalModel.turbidityMax;
-      _model = _model.copyWith(hasUnsavedChanges: hasChanges);
+  Future<bool> connectToEsp() async {
+    if (_settings.espIpAddress.isEmpty) {
+      return false;
     }
 
+    try {
+      await _webSocketService.connect(_settings.espIpAddress);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error connecting to ESP: $e');
+      return false;
+    }
+  }
+
+  void disconnectFromEsp() {
+    _webSocketService.disconnect();
     notifyListeners();
+  }
 
-    // Log validation status changes
-    if (wasValid != _model.isValid) {
-      debugPrint('SettingsViewModel: Validation status changed to ${_model.isValid}');
+  Future<bool> testConnection() async {
+    if (_settings.espIpAddress.isEmpty) {
+      return false;
+    }
+
+    try {
+      // Create a temporary connection for testing
+      final testService = WebSocketService();
+      await testService.connect(_settings.espIpAddress);
+      final isConnected = testService.isConnected;
+      testService.disconnect();
+      return isConnected;
+    } catch (e) {
+      debugPrint('Connection test failed: $e');
+      return false;
     }
   }
 
-  @override
-  void dispose() {
-    _webSocketService.removeListener(_onConnectionStatusChanged);
-    super.dispose();
+  // Add missing methods that UI widgets expect
+  Future<void> clearAllData() async {
+    await clearData();
+  }
+
+  Future<bool> clearData() async {
+    try {
+      await _storageService.clearAll();
+      _settings = SettingsModel();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error clearing data: $e');
+      return false;
+    }
+  }
+
+  Future<void> resetToDefaults() async {
+    _settings = SettingsModel();
+    await updateEspIpAddress('');
+    await updateThresholds(
+      lowWaterThreshold: 20.0,
+      highTurbidityThreshold: 10.0,
+      lowBatteryThreshold: 20.0,
+    );
+    await updateAlertSettings(
+      alertsEnabled: true,
+      soundEnabled: true,
+      vibrationEnabled: true,
+    );
   }
 }

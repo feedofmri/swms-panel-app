@@ -54,10 +54,35 @@ class NotificationService {
     debugPrint('NotificationService: Initialized successfully');
   }
 
-  /// Handle notification tap
-  void _onNotificationTapped(NotificationResponse notificationResponse) {
-    debugPrint('Notification tapped: ${notificationResponse.payload}');
-    // Handle notification tap - could navigate to alerts screen
+  /// Show a notification with title and body
+  Future<void> showNotification(String title, String body) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'swms_alerts',
+      'SWMS Alerts',
+      channelDescription: 'Notifications for SWMS system alerts',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const DarwinNotificationDetails iosPlatformChannelSpecifics =
+        DarwinNotificationDetails();
+
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iosPlatformChannelSpecifics,
+    );
+
+    await _flutterLocalNotificationsPlugin.show(
+      DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title,
+      body,
+      platformChannelSpecifics,
+    );
   }
 
   /// Show notification for alert
@@ -150,5 +175,16 @@ class NotificationService {
   Future<void> cancelNotification(int id) async {
     await _flutterLocalNotificationsPlugin.cancel(id);
     debugPrint('NotificationService: Cancelled notification with id: $id');
+  }
+
+  /// Handle notification tap
+  void _onNotificationTapped(NotificationResponse notificationResponse) {
+    debugPrint('Notification tapped: ${notificationResponse.payload}');
+    // Handle notification tap - could navigate to alerts screen
+  }
+
+  /// Show an alert notification (for backwards compatibility)
+  Future<void> showAlert(String title, String message) async {
+    await showNotification(title, message);
   }
 }

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../../core/models/alert.dart';
 import '../../../core/utils/app_theme.dart';
+import '../viewmodel/alerts_viewmodel.dart';
 
-/// Filter chips for filtering alerts by level
+/// Filter chips for filtering alerts by severity
 class AlertFilterChips extends StatelessWidget {
-  final AlertLevel? selectedFilter;
-  final ValueChanged<AlertLevel?> onFilterChanged;
+  final AlertSeverity? selectedFilter;
+  final ValueChanged<AlertSeverity?> onFilterChanged;
 
   const AlertFilterChips({
     super.key,
@@ -33,24 +33,24 @@ class AlertFilterChips extends StatelessWidget {
             ),
           ),
 
-          // Individual level filter chips
-          ...AlertLevel.values.map((level) {
+          // Individual severity filter chips
+          ...AlertSeverity.values.map((severity) {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
-                label: Text(level.displayName),
-                selected: selectedFilter == level,
+                label: Text(_getSeverityDisplayName(severity)),
+                selected: selectedFilter == severity,
                 onSelected: (selected) {
-                  onFilterChanged(selected ? level : null);
+                  onFilterChanged(selected ? severity : null);
                 },
-                selectedColor: _getAlertColor(level).withOpacity(0.2),
-                checkmarkColor: _getAlertColor(level),
-                avatar: selectedFilter == level
+                selectedColor: _getAlertColor(severity).withOpacity(0.2),
+                checkmarkColor: _getAlertColor(severity),
+                avatar: selectedFilter == severity
                     ? null
                     : Icon(
-                        _getAlertIcon(level),
+                        _getAlertIcon(severity),
                         size: 16,
-                        color: _getAlertColor(level),
+                        color: _getAlertColor(severity),
                       ),
               ),
             );
@@ -60,31 +60,39 @@ class AlertFilterChips extends StatelessWidget {
     );
   }
 
-  /// Get alert icon based on level
-  IconData _getAlertIcon(AlertLevel level) {
-    switch (level) {
-      case AlertLevel.info:
-        return Icons.info_outline;
-      case AlertLevel.warning:
-        return Icons.warning_amber;
-      case AlertLevel.critical:
-        return Icons.error_outline;
-      case AlertLevel.emergency:
-        return Icons.emergency;
+  /// Get display name for severity
+  String _getSeverityDisplayName(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
+        return 'Info';
+      case AlertSeverity.warning:
+        return 'Warning';
+      case AlertSeverity.critical:
+        return 'Critical';
     }
   }
 
-  /// Get alert color based on level
-  Color _getAlertColor(AlertLevel level) {
-    switch (level) {
-      case AlertLevel.info:
+  /// Get alert icon based on severity
+  IconData _getAlertIcon(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
+        return Icons.info_outline;
+      case AlertSeverity.warning:
+        return Icons.warning_amber;
+      case AlertSeverity.critical:
+        return Icons.error_outline;
+    }
+  }
+
+  /// Get alert color based on severity
+  Color _getAlertColor(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
         return Colors.blue;
-      case AlertLevel.warning:
+      case AlertSeverity.warning:
         return AppTheme.warningColor;
-      case AlertLevel.critical:
+      case AlertSeverity.critical:
         return AppTheme.errorColor;
-      case AlertLevel.emergency:
-        return Colors.deepOrange;
     }
   }
 }

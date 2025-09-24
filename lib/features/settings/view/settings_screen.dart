@@ -141,7 +141,8 @@ class SettingsScreen extends StatelessWidget {
 
   /// Build settings summary
   Widget _buildSettingsSummary(BuildContext context, SettingsViewModel viewModel) {
-    final summary = viewModel.getSettingsSummary();
+    final summaryText = viewModel.getSettingsSummary();
+    final summaryLines = summaryText.split('\n');
 
     return Card(
       child: Padding(
@@ -167,7 +168,11 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            ...summary.entries.map((entry) {
+            ...summaryLines.map((line) {
+              if (line.trim().isEmpty) return const SizedBox.shrink();
+              final parts = line.split(':');
+              if (parts.length < 2) return Text(line);
+
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Row(
@@ -175,7 +180,7 @@ class SettingsScreen extends StatelessWidget {
                     Expanded(
                       flex: 2,
                       child: Text(
-                        entry.key,
+                        parts[0].trim(),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.textSecondary,
                         ),
@@ -184,7 +189,7 @@ class SettingsScreen extends StatelessWidget {
                     Expanded(
                       flex: 3,
                       child: Text(
-                        entry.value.toString(),
+                        parts.skip(1).join(':').trim(),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w500,
                         ),

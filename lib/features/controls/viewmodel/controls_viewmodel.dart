@@ -1,313 +1,173 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../../../core/models/pump_status.dart';
-import '../../../core/models/sensor_data.dart';
 import '../../../core/services/websocket_service.dart';
-import '../model/controls_model.dart';
+import '../../../core/models/sensor_data.dart';
 
-/// ViewModel for the Controls screen following MVVM pattern
 class ControlsViewModel extends ChangeNotifier {
   final WebSocketService _webSocketService;
 
-  ControlsModel _model = ControlsModel(
-    pump1Status: PumpStatus(pumpId: 'pump1', isOn: false),
-    pump2Status: PumpStatus(pumpId: 'pump2', isOn: false),
-  );
-
   StreamSubscription<SensorData>? _sensorDataSubscription;
+  SensorData? _currentSensorData;
+  bool _pump1IsLoading = false;
+  bool _pump2IsLoading = false;
+  String? _lastCommandStatus;
 
   ControlsViewModel({
     required WebSocketService webSocketService,
   }) : _webSocketService = webSocketService {
-    _initialize();
+    _initializeListeners();
   }
 
-  // Getters
-  ControlsModel get model => _model;
-  bool get isConnected => _model.isConnected;
-  bool get canSendCommands => _model.canSendCommands;
-  PumpStatus get pump1Status => _model.pump1Status;
-  PumpStatus get pump2Status => _model.pump2Status;
-  bool get isBuzzerActive => _model.isBuzzerActive;
-  bool get isAnyPumpRunning => _model.isAnyPumpRunning;
-  bool get areBothPumpsRunning => _model.areBothPumpsRunning;
-  int get runningPumpsCount => _model.runningPumpsCount;
-  String get statusSummary => _model.statusSummary;
-  String? get lastCommandResult => _model.lastCommandResult;
+  // Basic getters
+  SensorData? get currentSensorData => _currentSensorData;
+  SensorData? get model => _currentSensorData;
+  bool get isConnected => _webSocketService.isConnected;
+  String get connectionStatus => _webSocketService.connectionStatus;
+  bool get pump1IsLoading => _pump1IsLoading;
+  bool get pump2IsLoading => _pump2IsLoading;
+  String? get lastCommandStatus => _lastCommandStatus;
+  String? get lastCommandResult => _lastCommandStatus;
 
-  /// Initialize the controls
-  void _initialize() {
-    _listenToWebSocketUpdates();
-    _listenToConnectionChanges();
+  // UI-expected getters
+  bool get canSendCommands => _webSocketService.isConnected;
+  String get pump1Status => _currentSensorData?.pump1Status ?? 'OFF';
+  String get pump2Status => _currentSensorData?.pump2Status ?? 'OFF';
+  int get runningPumpsCount =>
+      (pump1Status == 'ON' ? 1 : 0) + (pump2Status == 'ON' ? 1 : 0);
+  bool get isAnyPumpRunning => pump1Status == 'ON' || pump2Status == 'ON';
+  String get statusSummary {
+    if (!isConnected) return 'Disconnected';
+    if (isAnyPumpRunning) return '$runningPumpsCount pump(s) running';
+    return 'All pumps stopped';
   }
 
-  /// Listen to WebSocket sensor data updates
-  void _listenToWebSocketUpdates() {
+  void _initializeListeners() {
     _sensorDataSubscription = _webSocketService.sensorDataStream.listen(
       (sensorData) {
-        _updatePumpStatusFromSensorData(sensorData);
-      },
-      onError: (error) {
-        debugPrint('ControlsViewModel: Sensor data stream error: $error');
+        _currentSensorData = sensorData;
+        notifyListeners();
       },
     );
   }
 
-  /// Listen to WebSocket connection changes
-  void _listenToConnectionChanges() {
-    _webSocketService.addListener(_onConnectionStatusChanged);
-  }
-
-  /// Handle WebSocket connection status changes
-  void _onConnectionStatusChanged() {
-    _updateModel(isConnected: _webSocketService.isConnected);
-  }
-
-  /// Update pump status from sensor data
-  void _updatePumpStatusFromSensorData(SensorData sensorData) {
-    final pump1On = sensorData.pump1Status.toUpperCase() == 'ON';
-    final pump2On = sensorData.pump2Status.toUpperCase() == 'ON';
-
-    final newPump1Status = pump1On != _model.pump1Status.isOn
-        ? _model.pump1Status.copyWith(isOn: pump1On, lastToggled: DateTime.now())
-        : _model.pump1Status;
-
-    final newPump2Status = pump2On != _model.pump2Status.isOn
-        ? _model.pump2Status.copyWith(isOn: pump2On, lastToggled: DateTime.now())
-        : _model.pump2Status;
-
-    _updateModel(
-      pump1Status: newPump1Status,
-      pump2Status: newPump2Status,
-    );
-
-    debugPrint('ControlsViewModel: Updated pump status - P1: $pump1On, P2: $pump2On');
-  }
-
-  /// Toggle pump 1
-  Future<bool> togglePump1() async {
-    if (!canSendCommands) {
-      debugPrint('ControlsViewModel: Cannot send command - not ready');
+  Future<bool> controlPump1(bool turnOn) async {
+    if (!_webSocketService.isConnected) {
+      _lastCommandStatus = 'Not connected to ESP8266';
+      notifyListeners();
       return false;
     }
 
-    final newState = !_model.pump1Status.isOn;
-    debugPrint('ControlsViewModel: Toggling Pump 1 to ${newState ? 'ON' : 'OFF'}');
-
-    _updateModel(
-      lastCommandSent: DateTime.now(),
-      lastCommandResult: null,
-    );
+    _pump1IsLoading = true;
+    _lastCommandStatus = null;
+    notifyListeners();
 
     try {
-      final success = await _webSocketService.controlPump('pump1', newState);
-
+      final success = await _webSocketService.controlPump('pump1', turnOn);
       if (success) {
-        _updateModel(
-          lastCommandResult: 'Pump 1 command sent successfully',
-        );
-        debugPrint('ControlsViewModel: Pump 1 command sent successfully');
-        return true;
+        _lastCommandStatus = 'Pump 1 ${turnOn ? 'started' : 'stopped'} successfully';
       } else {
-        _updateModel(
-          lastCommandResult: 'Failed to send Pump 1 command',
-        );
-        debugPrint('ControlsViewModel: Failed to send Pump 1 command');
-        return false;
+        _lastCommandStatus = 'Failed to control Pump 1';
       }
+      return success;
     } catch (e) {
-      _updateModel(
-        lastCommandResult: 'Error sending Pump 1 command: $e',
-      );
-      debugPrint('ControlsViewModel: Error sending Pump 1 command: $e');
+      _lastCommandStatus = 'Error controlling Pump 1: $e';
       return false;
+    } finally {
+      _pump1IsLoading = false;
+      notifyListeners();
     }
   }
 
-  /// Toggle pump 2
-  Future<bool> togglePump2() async {
-    if (!canSendCommands) {
-      debugPrint('ControlsViewModel: Cannot send command - not ready');
+  Future<bool> controlPump2(bool turnOn) async {
+    if (!_webSocketService.isConnected) {
+      _lastCommandStatus = 'Not connected to ESP8266';
+      notifyListeners();
       return false;
     }
 
-    final newState = !_model.pump2Status.isOn;
-    debugPrint('ControlsViewModel: Toggling Pump 2 to ${newState ? 'ON' : 'OFF'}');
-
-    _updateModel(
-      lastCommandSent: DateTime.now(),
-      lastCommandResult: null,
-    );
+    _pump2IsLoading = true;
+    _lastCommandStatus = null;
+    notifyListeners();
 
     try {
-      final success = await _webSocketService.controlPump('pump2', newState);
-
+      final success = await _webSocketService.controlPump('pump2', turnOn);
       if (success) {
-        _updateModel(
-          lastCommandResult: 'Pump 2 command sent successfully',
-        );
-        debugPrint('ControlsViewModel: Pump 2 command sent successfully');
-        return true;
+        _lastCommandStatus = 'Pump 2 ${turnOn ? 'started' : 'stopped'} successfully';
       } else {
-        _updateModel(
-          lastCommandResult: 'Failed to send Pump 2 command',
-        );
-        debugPrint('ControlsViewModel: Failed to send Pump 2 command');
-        return false;
+        _lastCommandStatus = 'Failed to control Pump 2';
       }
+      return success;
     } catch (e) {
-      _updateModel(
-        lastCommandResult: 'Error sending Pump 2 command: $e',
-      );
-      debugPrint('ControlsViewModel: Error sending Pump 2 command: $e');
+      _lastCommandStatus = 'Error controlling Pump 2: $e';
       return false;
+    } finally {
+      _pump2IsLoading = false;
+      notifyListeners();
     }
   }
 
-  /// Silence buzzer
+  // Methods expected by the UI
+  Future<void> togglePump1() async {
+    final currentlyOn = pump1Status == 'ON';
+    await controlPump1(!currentlyOn);
+  }
+
+  Future<void> togglePump2() async {
+    final currentlyOn = pump2Status == 'ON';
+    await controlPump2(!currentlyOn);
+  }
+
+  Future<void> emergencyStopAllPumps() async {
+    _lastCommandStatus = 'Emergency stop initiated...';
+    notifyListeners();
+
+    try {
+      final results = await Future.wait([
+        controlPump1(false),
+        controlPump2(false),
+      ]);
+
+      if (results.every((result) => result)) {
+        _lastCommandStatus = 'Emergency stop completed - All pumps stopped';
+      } else {
+        _lastCommandStatus = 'Emergency stop partially failed';
+      }
+    } catch (e) {
+      _lastCommandStatus = 'Emergency stop failed: $e';
+    }
+  }
+
   Future<bool> silenceBuzzer() async {
-    if (!canSendCommands) {
-      debugPrint('ControlsViewModel: Cannot send command - not ready');
+    if (!_webSocketService.isConnected) {
+      _lastCommandStatus = 'Not connected to ESP8266';
+      notifyListeners();
       return false;
     }
-
-    debugPrint('ControlsViewModel: Silencing buzzer');
-
-    _updateModel(
-      lastCommandSent: DateTime.now(),
-      lastCommandResult: null,
-    );
 
     try {
       final success = await _webSocketService.silenceBuzzer();
-
       if (success) {
-        _updateModel(
-          isBuzzerActive: false,
-          lastCommandResult: 'Buzzer silenced successfully',
-        );
-        debugPrint('ControlsViewModel: Buzzer silenced successfully');
-        return true;
+        _lastCommandStatus = 'Buzzer silenced successfully';
       } else {
-        _updateModel(
-          lastCommandResult: 'Failed to silence buzzer',
-        );
-        debugPrint('ControlsViewModel: Failed to silence buzzer');
-        return false;
+        _lastCommandStatus = 'Failed to silence buzzer';
       }
+      return success;
     } catch (e) {
-      _updateModel(
-        lastCommandResult: 'Error silencing buzzer: $e',
-      );
-      debugPrint('ControlsViewModel: Error silencing buzzer: $e');
+      _lastCommandStatus = 'Error silencing buzzer: $e';
       return false;
+    } finally {
+      notifyListeners();
     }
   }
 
-  /// Stop all pumps (emergency stop)
-  Future<bool> emergencyStopAllPumps() async {
-    if (!canSendCommands) {
-      debugPrint('ControlsViewModel: Cannot send command - not ready');
-      return false;
-    }
-
-    debugPrint('ControlsViewModel: Emergency stop - turning off all pumps');
-
-    _updateModel(
-      lastCommandSent: DateTime.now(),
-      lastCommandResult: null,
-    );
-
-    try {
-      // Send stop commands to both pumps
-      final pump1Success = await _webSocketService.controlPump('pump1', false);
-      final pump2Success = await _webSocketService.controlPump('pump2', false);
-
-      if (pump1Success && pump2Success) {
-        _updateModel(
-          lastCommandResult: 'Emergency stop completed - all pumps stopped',
-        );
-        debugPrint('ControlsViewModel: Emergency stop completed successfully');
-        return true;
-      } else {
-        _updateModel(
-          lastCommandResult: 'Emergency stop partially failed',
-        );
-        debugPrint('ControlsViewModel: Emergency stop partially failed');
-        return false;
-      }
-    } catch (e) {
-      _updateModel(
-        lastCommandResult: 'Error during emergency stop: $e',
-      );
-      debugPrint('ControlsViewModel: Error during emergency stop: $e');
-      return false;
-    }
-  }
-
-  /// Send custom command
-  Future<bool> sendCustomCommand(Map<String, dynamic> command) async {
-    if (!canSendCommands) {
-      debugPrint('ControlsViewModel: Cannot send command - not ready');
-      return false;
-    }
-
-    debugPrint('ControlsViewModel: Sending custom command: $command');
-
-    _updateModel(
-      lastCommandSent: DateTime.now(),
-      lastCommandResult: null,
-    );
-
-    try {
-      final success = await _webSocketService.sendCommand(command);
-
-      if (success) {
-        _updateModel(
-          lastCommandResult: 'Custom command sent successfully',
-        );
-        debugPrint('ControlsViewModel: Custom command sent successfully');
-        return true;
-      } else {
-        _updateModel(
-          lastCommandResult: 'Failed to send custom command',
-        );
-        debugPrint('ControlsViewModel: Failed to send custom command');
-        return false;
-      }
-    } catch (e) {
-      _updateModel(
-        lastCommandResult: 'Error sending custom command: $e',
-      );
-      debugPrint('ControlsViewModel: Error sending custom command: $e');
-      return false;
-    }
-  }
-
-  /// Update the model and notify listeners
-  void _updateModel({
-    PumpStatus? pump1Status,
-    PumpStatus? pump2Status,
-    bool? isConnected,
-    bool? isBuzzerActive,
-    DateTime? lastCommandSent,
-    String? lastCommandResult,
-  }) {
-    _model = _model.copyWith(
-      pump1Status: pump1Status,
-      pump2Status: pump2Status,
-      isConnected: isConnected,
-      isBuzzerActive: isBuzzerActive,
-      lastCommandSent: lastCommandSent,
-      lastCommandResult: lastCommandResult,
-    );
+  void clearStatus() {
+    _lastCommandStatus = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
     _sensorDataSubscription?.cancel();
-    _webSocketService.removeListener(_onConnectionStatusChanged);
     super.dispose();
   }
 }

@@ -1,23 +1,18 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../../../core/models/alert.dart';
-import '../../../core/models/sensor_data.dart';
 import '../../../core/services/websocket_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/notification_service.dart';
-import '../../../core/utils/helpers.dart';
-import '../model/alerts_model.dart';
+import '../../../core/models/sensor_data.dart';
 
-/// ViewModel for the Alerts screen following MVVM pattern
 class AlertsViewModel extends ChangeNotifier {
   final WebSocketService _webSocketService;
   final StorageService _storageService;
   final NotificationService _notificationService;
 
-  AlertsModel _model = AlertsModel();
   StreamSubscription<SensorData>? _sensorDataSubscription;
-  double _reservoirMinLevel = 20.0;
-  double _turbidityMax = 15.0;
+  List<AlertData> _alerts = [];
+  SensorData? _currentSensorData;
 
   AlertsViewModel({
     required WebSocketService webSocketService,
@@ -26,216 +21,130 @@ class AlertsViewModel extends ChangeNotifier {
   }) : _webSocketService = webSocketService,
        _storageService = storageService,
        _notificationService = notificationService {
-    _initialize();
+    _initializeListeners();
   }
 
-  // Getters
-  AlertsModel get model => _model;
-  List<Alert> get alerts => _model.alerts;
-  List<Alert> get unreadAlerts => _model.unreadAlerts;
-  int get totalAlerts => _model.totalAlerts;
-  int get criticalAlerts => _model.criticalAlerts;
-  int get warningAlerts => _model.warningAlerts;
-  Alert? get latestAlert => _model.latestAlert;
-  bool get hasUnreadCriticalAlerts => _model.hasUnreadCriticalAlerts;
-  String get alertSummary => _model.alertSummary;
+  List<AlertData> get alerts => _alerts;
+  SensorData? get currentSensorData => _currentSensorData;
+  bool get isConnected => _webSocketService.isConnected;
 
-  /// Initialize the alerts system
-  Future<void> _initialize() async {
-    await _loadStoredAlerts();
-    await _loadSettings();
-    _listenToSensorUpdates();
-    await _notificationService.initialize();
-  }
+  // Additional getters expected by the UI
+  int get unreadAlerts => _alerts.where((alert) => !alert.isAcknowledged).length;
+  int get totalAlerts => _alerts.length;
+  int get criticalAlerts => _alerts.where((alert) => alert.severity == AlertSeverity.critical).length;
+  int get warningAlerts => _alerts.where((alert) => alert.severity == AlertSeverity.warning).length;
+  AlertData? get latestAlert => _alerts.isNotEmpty ? _alerts.first : null;
 
-  /// Load stored alerts from storage
-  Future<void> _loadStoredAlerts() async {
-    try {
-      final storedAlerts = await _storageService.getAlerts();
-      // Sort alerts by timestamp (newest first)
-      storedAlerts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      _updateModel(AlertsModel.fromAlerts(storedAlerts));
-      debugPrint('AlertsViewModel: Loaded ${storedAlerts.length} stored alerts');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to load stored alerts: $e');
-    }
-  }
-
-  /// Load threshold settings
-  Future<void> _loadSettings() async {
-    try {
-      _reservoirMinLevel = await _storageService.getReservoirMinLevel();
-      _turbidityMax = await _storageService.getTurbidityMax();
-      debugPrint('AlertsViewModel: Loaded settings - reservoir: $_reservoirMinLevel, turbidity: $_turbidityMax');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to load settings: $e');
-    }
-  }
-
-  /// Listen to sensor data updates for alert generation
-  void _listenToSensorUpdates() {
+  void _initializeListeners() {
     _sensorDataSubscription = _webSocketService.sensorDataStream.listen(
       (sensorData) {
-        _processSensorDataForAlerts(sensorData);
-      },
-      onError: (error) {
-        debugPrint('AlertsViewModel: Sensor data stream error: $error');
+        _currentSensorData = sensorData;
+        _checkForAlerts(sensorData);
+        notifyListeners();
       },
     );
   }
 
-  /// Process sensor data and generate alerts if needed
-  Future<void> _processSensorDataForAlerts(SensorData sensorData) async {
-    final generatedAlert = AppHelpers.generateAlertFromSensorData(
-      sensorData,
-      reservoirMinLevel: _reservoirMinLevel,
-      turbidityMax: _turbidityMax,
-    );
+  void _checkForAlerts(SensorData sensorData) {
+    final now = DateTime.now();
 
-    if (generatedAlert != null) {
-      await addAlert(generatedAlert);
+    // Check for low water levels
+    if (sensorData.reservoirLevel < 20) {
+      _addAlert(AlertData(
+        id: 'reservoir_low',
+        title: 'Low Reservoir Level',
+        message: 'Reservoir water level is critically low (${sensorData.reservoirLevel.toStringAsFixed(1)}%)',
+        severity: AlertSeverity.critical,
+        timestamp: now,
+      ));
+    }
+
+    if (sensorData.houseTankLevel < 15) {
+      _addAlert(AlertData(
+        id: 'house_tank_low',
+        title: 'Low House Tank Level',
+        message: 'House tank water level is critically low (${sensorData.houseTankLevel.toStringAsFixed(1)}%)',
+        severity: AlertSeverity.critical,
+        timestamp: now,
+      ));
+    }
+
+    // Check for high turbidity
+    if (sensorData.turbidity > 10) {
+      _addAlert(AlertData(
+        id: 'high_turbidity',
+        title: 'High Water Turbidity',
+        message: 'Water turbidity is above acceptable levels (${sensorData.turbidity.toStringAsFixed(1)} NTU)',
+        severity: AlertSeverity.warning,
+        timestamp: now,
+      ));
+    }
+
+    // Check for low battery
+    if (sensorData.battery < 20) {
+      _addAlert(AlertData(
+        id: 'low_battery',
+        title: 'Low Battery',
+        message: 'System battery is low (${sensorData.battery.toStringAsFixed(1)}%)',
+        severity: AlertSeverity.warning,
+        timestamp: now,
+      ));
     }
   }
 
-  /// Add a new alert
-  Future<void> addAlert(Alert alert) async {
-    try {
-      // Check if similar alert already exists in recent alerts (last 10 minutes)
-      final recentAlerts = _model.alerts.where((existingAlert) {
-        final timeDiff = DateTime.now().difference(existingAlert.timestamp);
-        return timeDiff.inMinutes < 10 &&
-               existingAlert.message == alert.message &&
-               existingAlert.source == alert.source;
-      }).toList();
+  void _addAlert(AlertData alert) {
+    // Remove existing alert with same ID
+    _alerts.removeWhere((a) => a.id == alert.id);
 
-      if (recentAlerts.isNotEmpty) {
-        debugPrint('AlertsViewModel: Similar alert exists, skipping: ${alert.message}');
-        return;
-      }
+    // Add new alert
+    _alerts.insert(0, alert);
 
-      final updatedAlerts = [alert, ..._model.alerts];
-      _updateModel(AlertsModel.fromAlerts(updatedAlerts));
+    // Limit to 50 alerts
+    if (_alerts.length > 50) {
+      _alerts = _alerts.take(50).toList();
+    }
 
-      // Save to storage
-      await _saveAlerts();
-
-      // Show notification for critical alerts
-      if (alert.level == AlertLevel.critical || alert.level == AlertLevel.emergency) {
-        await _notificationService.showAlertNotification(alert);
-      }
-
-      debugPrint('AlertsViewModel: Added new alert: ${alert.message}');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to add alert: $e');
+    // Send notification for critical alerts
+    if (alert.severity == AlertSeverity.critical) {
+      _notificationService.showNotification(alert.title, alert.message);
     }
   }
 
-  /// Mark alert as read
-  Future<void> markAlertAsRead(String alertId) async {
-    try {
-      final updatedAlerts = _model.alerts.map((alert) {
-        if (alert.id == alertId) {
-          return alert.copyWith(isRead: true);
-        }
-        return alert;
-      }).toList();
-
-      _updateModel(AlertsModel.fromAlerts(updatedAlerts));
-      await _saveAlerts();
-
-      debugPrint('AlertsViewModel: Marked alert as read: $alertId');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to mark alert as read: $e');
-    }
-  }
-
-  /// Mark all alerts as read
-  Future<void> markAllAlertsAsRead() async {
-    try {
-      final updatedAlerts = _model.alerts.map((alert) {
-        return alert.copyWith(isRead: true);
-      }).toList();
-
-      _updateModel(AlertsModel.fromAlerts(updatedAlerts));
-      await _saveAlerts();
-
-      debugPrint('AlertsViewModel: Marked all alerts as read');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to mark all alerts as read: $e');
-    }
-  }
-
-  /// Delete alert
-  Future<void> deleteAlert(String alertId) async {
-    try {
-      final updatedAlerts = _model.alerts.where((alert) => alert.id != alertId).toList();
-      _updateModel(AlertsModel.fromAlerts(updatedAlerts));
-      await _saveAlerts();
-
-      debugPrint('AlertsViewModel: Deleted alert: $alertId');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to delete alert: $e');
-    }
-  }
-
-  /// Clear all alerts
-  Future<void> clearAllAlerts() async {
-    try {
-      _updateModel(AlertsModel.fromAlerts([]));
-      await _storageService.clearAlerts();
-      await _notificationService.cancelAllNotifications();
-
-      debugPrint('AlertsViewModel: Cleared all alerts');
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to clear all alerts: $e');
-    }
-  }
-
-  /// Get alerts filtered by level
-  List<Alert> getAlertsByLevel(AlertLevel level) {
-    return _model.getAlertsByLevel(level);
-  }
-
-  /// Get today's alerts
-  List<Alert> getTodayAlerts() {
-    return _model.getTodayAlerts();
-  }
-
-  /// Refresh alerts
+  // Methods expected by the UI
   Future<void> refresh() async {
-    await _loadStoredAlerts();
-    await _loadSettings();
-  }
-
-  /// Save alerts to storage
-  Future<void> _saveAlerts() async {
-    try {
-      await _storageService.saveAlerts(_model.alerts);
-    } catch (e) {
-      debugPrint('AlertsViewModel: Failed to save alerts: $e');
-    }
-  }
-
-  /// Update model and notify listeners
-  void _updateModel(AlertsModel newModel) {
-    _model = newModel;
+    // Refresh connection status and trigger UI update
     notifyListeners();
   }
 
-  /// Create manual alert (for testing or manual entry)
-  Future<void> createManualAlert({
-    required String message,
-    required AlertLevel level,
-    String? source,
-  }) async {
-    final alert = Alert(
-      id: Alert.generateId(),
-      message: message,
-      level: level,
-      source: source ?? 'manual',
-    );
+  void markAlertAsRead(String alertId) {
+    final alertIndex = _alerts.indexWhere((alert) => alert.id == alertId);
+    if (alertIndex != -1) {
+      _alerts[alertIndex] = _alerts[alertIndex].copyWith(isAcknowledged: true);
+      notifyListeners();
+    }
+  }
 
-    await addAlert(alert);
+  void markAllAlertsAsRead() {
+    _alerts = _alerts.map((alert) => alert.copyWith(isAcknowledged: true)).toList();
+    notifyListeners();
+  }
+
+  void deleteAlert(String alertId) {
+    _alerts.removeWhere((alert) => alert.id == alertId);
+    notifyListeners();
+  }
+
+  List<AlertData> getAlertsByLevel(AlertSeverity severity) {
+    return _alerts.where((alert) => alert.severity == severity).toList();
+  }
+
+  void dismissAlert(String alertId) {
+    deleteAlert(alertId);
+  }
+
+  void clearAllAlerts() {
+    _alerts.clear();
+    notifyListeners();
   }
 
   @override
@@ -244,3 +153,49 @@ class AlertsViewModel extends ChangeNotifier {
     super.dispose();
   }
 }
+
+// Update AlertData class to match UI expectations
+class AlertData {
+  final String id;
+  final String title;
+  final String message;
+  final AlertSeverity severity;
+  final DateTime timestamp;
+  final bool isAcknowledged;
+
+  AlertData({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.severity,
+    required this.timestamp,
+    this.isAcknowledged = false,
+  });
+
+  AlertData copyWith({
+    String? id,
+    String? title,
+    String? message,
+    AlertSeverity? severity,
+    DateTime? timestamp,
+    bool? isAcknowledged,
+  }) {
+    return AlertData(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      message: message ?? this.message,
+      severity: severity ?? this.severity,
+      timestamp: timestamp ?? this.timestamp,
+      isAcknowledged: isAcknowledged ?? this.isAcknowledged,
+    );
+  }
+}
+
+enum AlertSeverity {
+  info,
+  warning,
+  critical,
+}
+
+// Add Alert typedef for backwards compatibility with existing UI
+typedef Alert = AlertData;

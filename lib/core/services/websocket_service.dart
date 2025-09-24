@@ -141,6 +141,16 @@ class WebSocketService extends ChangeNotifier {
       // Handle raw ESP8266 serial data
       final espSerialData = EspSerialData.fromRawMessage(message.trim());
       _espSerialDataController.add(espSerialData);
+
+      // Try to convert ESP serial data to sensor data
+      final sensorData = espSerialData.toSensorData();
+      if (sensorData != null) {
+        _sensorDataController.add(sensorData);
+        debugPrint('WebSocket: Converted ESP serial data to sensor data: $sensorData');
+      } else {
+        debugPrint('WebSocket: Could not convert ESP serial data to sensor data');
+      }
+
       debugPrint('WebSocket: Parsed ESP serial data: $espSerialData');
 
     } catch (e) {
@@ -151,6 +161,12 @@ class WebSocketService extends ChangeNotifier {
       try {
         final espSerialData = EspSerialData.fromRawMessage(message.trim());
         _espSerialDataController.add(espSerialData);
+
+        // Try to convert to sensor data
+        final sensorData = espSerialData.toSensorData();
+        if (sensorData != null) {
+          _sensorDataController.add(sensorData);
+        }
       } catch (e2) {
         debugPrint('WebSocket: Failed to create ESP serial data: $e2');
       }

@@ -7,6 +7,14 @@ class SettingsModel {
   final bool hasUnsavedChanges;
   final String? lastSavedTimestamp;
 
+  // Add missing properties expected by the viewmodel
+  final double lowWaterThreshold;
+  final double highTurbidityThreshold;
+  final double lowBatteryThreshold;
+  final bool alertsEnabled;
+  final bool soundEnabled;
+  final bool vibrationEnabled;
+
   SettingsModel({
     this.espIpAddress = '',
     this.reservoirMinLevel = 20.0,
@@ -14,6 +22,13 @@ class SettingsModel {
     this.isConnected = false,
     this.hasUnsavedChanges = false,
     this.lastSavedTimestamp,
+    // Default values for new properties
+    this.lowWaterThreshold = 20.0,
+    this.highTurbidityThreshold = 10.0,
+    this.lowBatteryThreshold = 20.0,
+    this.alertsEnabled = true,
+    this.soundEnabled = true,
+    this.vibrationEnabled = true,
   });
 
   /// Create a copy with updated values
@@ -24,6 +39,12 @@ class SettingsModel {
     bool? isConnected,
     bool? hasUnsavedChanges,
     String? lastSavedTimestamp,
+    double? lowWaterThreshold,
+    double? highTurbidityThreshold,
+    double? lowBatteryThreshold,
+    bool? alertsEnabled,
+    bool? soundEnabled,
+    bool? vibrationEnabled,
   }) {
     return SettingsModel(
       espIpAddress: espIpAddress ?? this.espIpAddress,
@@ -32,6 +53,12 @@ class SettingsModel {
       isConnected: isConnected ?? this.isConnected,
       hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
       lastSavedTimestamp: lastSavedTimestamp ?? this.lastSavedTimestamp,
+      lowWaterThreshold: lowWaterThreshold ?? this.lowWaterThreshold,
+      highTurbidityThreshold: highTurbidityThreshold ?? this.highTurbidityThreshold,
+      lowBatteryThreshold: lowBatteryThreshold ?? this.lowBatteryThreshold,
+      alertsEnabled: alertsEnabled ?? this.alertsEnabled,
+      soundEnabled: soundEnabled ?? this.soundEnabled,
+      vibrationEnabled: vibrationEnabled ?? this.vibrationEnabled,
     );
   }
 
@@ -40,7 +67,12 @@ class SettingsModel {
     return espIpAddress.isNotEmpty &&
            reservoirMinLevel > 0 &&
            reservoirMinLevel <= 100 &&
-           turbidityMax > 0;
+           turbidityMax > 0 &&
+           lowWaterThreshold > 0 &&
+           lowWaterThreshold <= 100 &&
+           highTurbidityThreshold > 0 &&
+           lowBatteryThreshold > 0 &&
+           lowBatteryThreshold <= 100;
   }
 
   /// Get validation errors
@@ -52,11 +84,23 @@ class SettingsModel {
     }
 
     if (reservoirMinLevel <= 0 || reservoirMinLevel > 100) {
-      errors.add('Reservoir minimum level must be between 1% and 100%');
+      errors.add('Reservoir minimum level must be between 1 and 100');
     }
 
     if (turbidityMax <= 0) {
       errors.add('Turbidity maximum must be greater than 0');
+    }
+
+    if (lowWaterThreshold <= 0 || lowWaterThreshold > 100) {
+      errors.add('Low water threshold must be between 1 and 100');
+    }
+
+    if (highTurbidityThreshold <= 0) {
+      errors.add('High turbidity threshold must be greater than 0');
+    }
+
+    if (lowBatteryThreshold <= 0 || lowBatteryThreshold > 100) {
+      errors.add('Low battery threshold must be between 1 and 100');
     }
 
     return errors;
@@ -69,6 +113,12 @@ class SettingsModel {
       'reservoirMinLevel': reservoirMinLevel,
       'turbidityMax': turbidityMax,
       'lastSavedTimestamp': lastSavedTimestamp,
+      'lowWaterThreshold': lowWaterThreshold,
+      'highTurbidityThreshold': highTurbidityThreshold,
+      'lowBatteryThreshold': lowBatteryThreshold,
+      'alertsEnabled': alertsEnabled,
+      'soundEnabled': soundEnabled,
+      'vibrationEnabled': vibrationEnabled,
     };
   }
 
@@ -79,6 +129,12 @@ class SettingsModel {
       reservoirMinLevel: (map['reservoirMinLevel'] ?? 20.0).toDouble(),
       turbidityMax: (map['turbidityMax'] ?? 15.0).toDouble(),
       lastSavedTimestamp: map['lastSavedTimestamp'],
+      lowWaterThreshold: (map['lowWaterThreshold'] ?? 20.0).toDouble(),
+      highTurbidityThreshold: (map['highTurbidityThreshold'] ?? 10.0).toDouble(),
+      lowBatteryThreshold: (map['lowBatteryThreshold'] ?? 20.0).toDouble(),
+      alertsEnabled: map['alertsEnabled'] ?? true,
+      soundEnabled: map['soundEnabled'] ?? true,
+      vibrationEnabled: map['vibrationEnabled'] ?? true,
     );
   }
 
