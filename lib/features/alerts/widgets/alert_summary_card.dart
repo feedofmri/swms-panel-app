@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../core/models/alert.dart';
 import '../../../core/utils/app_theme.dart';
 import '../../../core/utils/constants.dart';
 import '../viewmodel/alerts_viewmodel.dart';
@@ -74,7 +73,7 @@ class AlertSummaryCard extends StatelessWidget {
                   child: _buildStatItem(
                     context,
                     'Unread',
-                    viewModel.unreadAlerts.length.toString(),
+                    viewModel.unreadAlerts.toString(),
                     AppTheme.successColor,
                     Icons.mark_email_unread,
                   ),
@@ -151,7 +150,7 @@ class AlertSummaryCard extends StatelessWidget {
   }
 
   /// Format latest alert info
-  String _formatLatestAlert(Alert alert) {
+  String _formatLatestAlert(AlertData alert) {
     final now = DateTime.now();
     final diff = now.difference(alert.timestamp);
 

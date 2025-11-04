@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/utils/app_theme.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/utils/constants.dart';
 import '../viewmodel/dashboard_viewmodel.dart';
-import '../model/dashboard_model.dart';
 import '../widgets/sensor_card.dart';
 import '../widgets/tank_level_card.dart';
 import '../widgets/pump_status_card.dart';
@@ -78,6 +76,15 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
+                  // Optional Tank Row
+                  TankLevelCard(
+                    title: 'Optional Tank',
+                    level: viewModel.optionalTankPercentage,
+                    icon: Icons.water,
+                    isConnected: viewModel.isConnected,
+                  ),
+                  const SizedBox(height: 16),
+
                   // Water Quality and Battery Row
                   Row(
                     children: [
@@ -122,7 +129,7 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Pump Status Row
+                  // Pump Status Row 1 (Pump 1 and 2)
                   Row(
                     children: [
                       Expanded(
@@ -140,6 +147,21 @@ class DashboardScreen extends StatelessWidget {
                           isConnected: viewModel.isConnected,
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Pump Status Row 2 (Pump 3)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: PumpStatusCard(
+                          title: 'Pump 3',
+                          isOn: viewModel.isPump3On,
+                          isConnected: viewModel.isConnected,
+                        ),
+                      ),
+                      const Expanded(child: SizedBox()), // Empty space to balance the row
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -165,20 +187,24 @@ class DashboardScreen extends StatelessWidget {
     Color statusColor;
     IconData statusIcon;
 
-    switch (status) {
-      case SystemStatus.normal:
+    // Handle string-based status instead of enum
+    switch (status.toLowerCase()) {
+      case 'normal':
         statusColor = AppTheme.successColor;
         statusIcon = Icons.check_circle;
         break;
-      case SystemStatus.warning:
+      case 'warning':
         statusColor = AppTheme.warningColor;
         statusIcon = Icons.warning;
         break;
-      case SystemStatus.critical:
+      case 'critical':
+      case 'alert':
         statusColor = AppTheme.errorColor;
         statusIcon = Icons.error;
         break;
-      case SystemStatus.disconnected:
+      case 'disconnected':
+      case 'no data':
+      default:
         statusColor = AppTheme.disconnectedColor;
         statusIcon = Icons.cloud_off;
         break;
@@ -207,7 +233,7 @@ class DashboardScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    status.displayText,
+                    status,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: statusColor,
                       fontWeight: FontWeight.w600,
@@ -315,15 +341,18 @@ class DashboardScreen extends StatelessWidget {
   }
 
   /// Get system status description
-  String _getSystemStatusDescription(SystemStatus status, DashboardViewModel viewModel) {
-    switch (status) {
-      case SystemStatus.normal:
+  String _getSystemStatusDescription(String status, DashboardViewModel viewModel) {
+    switch (status.toLowerCase()) {
+      case 'normal':
         return 'All systems operating normally';
-      case SystemStatus.warning:
+      case 'warning':
         return 'Some parameters need attention';
-      case SystemStatus.critical:
+      case 'critical':
+      case 'alert':
         return 'Critical issues detected';
-      case SystemStatus.disconnected:
+      case 'disconnected':
+      case 'no data':
+      default:
         return 'No connection to monitoring system';
     }
   }

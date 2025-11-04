@@ -332,9 +332,9 @@ class _EspMonitorScreenState extends State<EspMonitorScreen> {
         children: [
           Row(
             children: [
-              Text(
+              Icon(
                 message.dataType.icon,
-                style: const TextStyle(fontSize: 16),
+                size: 16,
               ),
               const SizedBox(width: 8),
               Text(
@@ -369,7 +369,7 @@ class _EspMonitorScreenState extends State<EspMonitorScreen> {
             const SizedBox(height: 4),
             Wrap(
               spacing: 8,
-              children: message.numericValues.map((value) {
+              children: message.numericValues.entries.map((entry) {
                 return Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -380,7 +380,7 @@ class _EspMonitorScreenState extends State<EspMonitorScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    value.toString(),
+                    '${entry.key}: ${entry.value}',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppTheme.primaryColor,

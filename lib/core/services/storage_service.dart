@@ -183,4 +183,73 @@ class StorageService {
       'alertsCount': (await getAlerts()).length,
     };
   }
+
+  // Add missing methods expected by SettingsViewModel
+  Future<Map<String, double>?> getThresholds() async {
+    await _ensureInitialized();
+    try {
+      final thresholdsJson = _prefs!.getString('thresholds');
+      if (thresholdsJson != null) {
+        final Map<String, dynamic> decoded = json.decode(thresholdsJson);
+        return decoded.map((key, value) => MapEntry(key, (value as num).toDouble()));
+      }
+      // Return default values if no thresholds stored
+      return {
+        'lowWater': 20.0,
+        'highTurbidity': 10.0,
+        'lowBattery': 20.0,
+      };
+    } catch (e) {
+      debugPrint('StorageService: Error loading thresholds: $e');
+      return null;
+    }
+  }
+
+  Future<void> saveThresholds(Map<String, double> thresholds) async {
+    await _ensureInitialized();
+    try {
+      final thresholdsJson = json.encode(thresholds);
+      await _prefs!.setString('thresholds', thresholdsJson);
+      debugPrint('StorageService: Saved thresholds: $thresholds');
+    } catch (e) {
+      debugPrint('StorageService: Error saving thresholds: $e');
+    }
+  }
+
+  Future<Map<String, bool>?> getAlertSettings() async {
+    await _ensureInitialized();
+    try {
+      final alertSettingsJson = _prefs!.getString('alert_settings');
+      if (alertSettingsJson != null) {
+        final Map<String, dynamic> decoded = json.decode(alertSettingsJson);
+        return decoded.map((key, value) => MapEntry(key, value as bool));
+      }
+      // Return default values if no alert settings stored
+      return {
+        'enabled': true,
+        'sound': true,
+        'vibration': true,
+      };
+    } catch (e) {
+      debugPrint('StorageService: Error loading alert settings: $e');
+      return null;
+    }
+  }
+
+  Future<void> saveAlertSettings(Map<String, bool> alertSettings) async {
+    await _ensureInitialized();
+    try {
+      final alertSettingsJson = json.encode(alertSettings);
+      await _prefs!.setString('alert_settings', alertSettingsJson);
+      debugPrint('StorageService: Saved alert settings: $alertSettings');
+    } catch (e) {
+      debugPrint('StorageService: Error saving alert settings: $e');
+    }
+  }
+
+  Future<void> clearAll() async {
+    await _ensureInitialized();
+    await _prefs!.clear();
+    debugPrint('StorageService: Cleared all data');
+  }
 }

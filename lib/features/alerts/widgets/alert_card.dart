@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../core/models/alert.dart';
 import '../../../core/utils/app_theme.dart';
-import '../../../core/utils/helpers.dart';
-import '../../../core/utils/constants.dart';
+import '../viewmodel/alerts_viewmodel.dart';
 
-/// Alert card widget for displaying individual alerts
+/// Individual alert card widget
 class AlertCard extends StatelessWidget {
-  final Alert alert;
+  final AlertData alert;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
 
@@ -19,127 +17,104 @@ class AlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final alertColor = _getAlertColor(alert.level);
-    final alertIcon = _getAlertIcon(alert.level);
-
     return Card(
-      elevation: alert.isRead ? 2 : 4,
-      color: alert.isRead ? null : alertColor.withOpacity(0.05),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.cardBorderRadius),
-        child: Padding(
-          padding: AppConstants.cardPadding,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _getSeverityColor(alert.severity).withOpacity(0.3),
+            ),
+            borderRadius: BorderRadius.circular(8),
+            color: alert.isAcknowledged
+                ? Colors.transparent
+                : _getSeverityColor(alert.severity).withOpacity(0.1),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row
               Row(
                 children: [
-                  // Alert level indicator
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: alertColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(
-                      alertIcon,
-                      color: alertColor,
-                      size: 16,
-                    ),
+                  Icon(
+                    _getSeverityIcon(alert.severity),
+                    color: _getSeverityColor(alert.severity),
+                    size: 20,
                   ),
                   const SizedBox(width: 8),
-
-                  // Alert level badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: alertColor,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+                  Expanded(
                     child: Text(
-                      alert.level.displayName.toUpperCase(),
-                      style: AppTextStyles.statusIndicator.copyWith(
-                        fontSize: 10,
+                      alert.title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: _getSeverityColor(alert.severity),
                       ),
                     ),
                   ),
-
-                  const Spacer(),
-
-                  // Unread indicator
-                  if (!alert.isRead)
+                  if (!alert.isAcknowledged)
                     Container(
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: alertColor,
+                        color: AppTheme.primaryColor,
                         shape: BoxShape.circle,
                       ),
                     ),
-
-                  const SizedBox(width: 8),
-
-                  // Delete button
-                  if (onDelete != null)
+                  if (onDelete != null) ...[
+                    const SizedBox(width: 8),
                     IconButton(
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline),
-                      iconSize: 18,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
+                      icon: Icon(
+                        Icons.close,
+                        color: Colors.grey.shade600,
+                        size: 18,
                       ),
+                      onPressed: onDelete,
+                      visualDensity: VisualDensity.compact,
                     ),
+                  ],
                 ],
               ),
-
               const SizedBox(height: 8),
-
-              // Alert message
               Text(
                 alert.message,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: alert.isRead ? FontWeight.normal : FontWeight.w500,
-                  color: alert.isRead ? AppTheme.textSecondary : AppTheme.textPrimary,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-
               const SizedBox(height: 8),
-
-              // Footer with timestamp and source
               Row(
                 children: [
                   Icon(
                     Icons.access_time,
                     size: 14,
-                    color: AppTheme.textLight,
+                    color: AppTheme.textSecondary,
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    AppHelpers.formatTimestamp(alert.timestamp),
+                    _formatTime(alert.timestamp),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppTheme.textLight,
+                      color: AppTheme.textSecondary,
                     ),
                   ),
-
-                  if (alert.source != null) ...[
-                    const SizedBox(width: 16),
-                    Icon(
-                      Icons.sensors,
-                      size: 14,
-                      color: AppTheme.textLight,
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      alert.source!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textLight,
+                    decoration: BoxDecoration(
+                      color: _getSeverityColor(alert.severity).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      alert.severity.name.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: _getSeverityColor(alert.severity),
                       ),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ],
@@ -149,31 +124,38 @@ class AlertCard extends StatelessWidget {
     );
   }
 
-  /// Get alert icon based on level
-  IconData _getAlertIcon(AlertLevel level) {
-    switch (level) {
-      case AlertLevel.info:
-        return Icons.info_outline;
-      case AlertLevel.warning:
-        return Icons.warning_amber;
-      case AlertLevel.critical:
-        return Icons.error_outline;
-      case AlertLevel.emergency:
-        return Icons.emergency;
+  /// Get severity color
+  Color _getSeverityColor(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
+        return Colors.blue;
+      case AlertSeverity.warning:
+        return AppTheme.warningColor;
+      case AlertSeverity.critical:
+        return AppTheme.errorColor;
     }
   }
 
-  /// Get alert color based on level
-  Color _getAlertColor(AlertLevel level) {
-    switch (level) {
-      case AlertLevel.info:
-        return Colors.blue;
-      case AlertLevel.warning:
-        return AppTheme.warningColor;
-      case AlertLevel.critical:
-        return AppTheme.errorColor;
-      case AlertLevel.emergency:
-        return Colors.deepOrange;
+  /// Get severity icon
+  IconData _getSeverityIcon(AlertSeverity severity) {
+    switch (severity) {
+      case AlertSeverity.info:
+        return Icons.info_outline;
+      case AlertSeverity.warning:
+        return Icons.warning_amber;
+      case AlertSeverity.critical:
+        return Icons.error_outline;
     }
+  }
+
+  /// Format timestamp
+  String _formatTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 }

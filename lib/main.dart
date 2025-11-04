@@ -141,7 +141,7 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Stack(
                   children: [
                     const Icon(Icons.notifications),
-                    if (alertsViewModel.unreadAlerts.isNotEmpty)
+                    if (alertsViewModel.unreadAlerts > 0)
                       Positioned(
                         right: 0,
                         top: 0,
@@ -149,18 +149,17 @@ class _MainScreenState extends State<MainScreen> {
                           padding: const EdgeInsets.all(2),
                           decoration: BoxDecoration(
                             color: Colors.red,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           constraints: const BoxConstraints(
                             minWidth: 16,
                             minHeight: 16,
                           ),
                           child: Text(
-                            '${alertsViewModel.unreadAlerts.length}',
+                            '${alertsViewModel.unreadAlerts}',
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
                             ),
                             textAlign: TextAlign.center,
                           ),

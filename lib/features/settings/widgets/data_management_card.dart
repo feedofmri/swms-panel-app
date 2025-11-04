@@ -231,14 +231,10 @@ class DataManagementCard extends StatelessWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      final success = await viewModel.clearAllData();
+      await viewModel.clearAllData();
 
       if (context.mounted) {
-        if (success) {
-          AppHelpers.showSuccessSnackBar(context, 'All data cleared successfully');
-        } else {
-          AppHelpers.showErrorSnackBar(context, 'Failed to clear data');
-        }
+        AppHelpers.showSuccessSnackBar(context, 'All data cleared successfully');
       }
     }
   }

@@ -5,6 +5,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
 import '../models/sensor_data.dart';
 import '../models/esp_serial_data.dart';
+import 'data_smoothing_service.dart';
 
 /// Service for managing WebSocket connection to ESP8266
 class WebSocketService extends ChangeNotifier {
@@ -33,6 +34,14 @@ class WebSocketService extends ChangeNotifier {
   final StreamController<EspSerialData> _espSerialDataController =
       StreamController<EspSerialData>.broadcast();
 
+  // Cumulative sensor data storage
+  Map<String, dynamic> _cumulativeSensorData = {};
+  Timer? _sensorDataTimer;
+  static const Duration sensorDataTimeout = Duration(seconds: 2);
+
+  // Data smoothing service for filtering sensor dropouts
+  final DataSmoothingService _dataSmoothingService = DataSmoothingService();
+
   // Getters
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
@@ -52,6 +61,10 @@ class WebSocketService extends ChangeNotifier {
     _espIpAddress = ipAddress;
     _isConnecting = true;
     _connectionStatus = 'Connecting...';
+
+    // Reset data smoothing service for fresh start
+    _dataSmoothingService.reset();
+
     notifyListeners();
 
     try {
@@ -118,17 +131,21 @@ class WebSocketService extends ChangeNotifier {
       try {
         final jsonData = json.decode(message.trim());
         if (jsonData is Map<String, dynamic>) {
-          final sensorData = SensorData.fromJson(jsonData);
-          _sensorDataController.add(sensorData);
-          debugPrint('WebSocket: Parsed sensor data: $sensorData');
+          final rawSensorData = SensorData.fromJson(jsonData);
+          // Apply data smoothing to filter dropouts
+          final smoothedSensorData = _dataSmoothingService.processSensorData(rawSensorData);
+          _sensorDataController.add(smoothedSensorData);
+          debugPrint('WebSocket: Parsed and smoothed sensor data: $smoothedSensorData');
           return;
         } else if (jsonData is List) {
           // Handle list of sensor data
           for (var item in jsonData) {
             if (item is Map<String, dynamic>) {
-              final sensorData = SensorData.fromJson(item);
-              _sensorDataController.add(sensorData);
-              debugPrint('WebSocket: Parsed sensor data: $sensorData');
+              final rawSensorData = SensorData.fromJson(item);
+              // Apply data smoothing to filter dropouts
+              final smoothedSensorData = _dataSmoothingService.processSensorData(rawSensorData);
+              _sensorDataController.add(smoothedSensorData);
+              debugPrint('WebSocket: Parsed and smoothed sensor data: $smoothedSensorData');
             }
           }
           return;
@@ -138,22 +155,101 @@ class WebSocketService extends ChangeNotifier {
         debugPrint('WebSocket: Message is not JSON, treating as ESP serial data');
       }
 
-      // Handle raw ESP8266 serial data
+      // Handle raw ESP8266 serial data with cumulative approach
       final espSerialData = EspSerialData.fromRawMessage(message.trim());
       _espSerialDataController.add(espSerialData);
+
+      // Accumulate sensor data from individual ESP messages
+      if (espSerialData.parsedData != null) {
+        _accumulateSensorData(espSerialData.parsedData!);
+      }
+
       debugPrint('WebSocket: Parsed ESP serial data: $espSerialData');
 
     } catch (e) {
       debugPrint('WebSocket: Failed to parse message: $e');
       debugPrint('WebSocket: Raw message was: $message');
+    }
+  }
 
-      // Even if parsing fails, still try to create ESP serial data
-      try {
-        final espSerialData = EspSerialData.fromRawMessage(message.trim());
-        _espSerialDataController.add(espSerialData);
-      } catch (e2) {
-        debugPrint('WebSocket: Failed to create ESP serial data: $e2');
+  /// Accumulate sensor data from individual ESP messages and build complete SensorData
+  void _accumulateSensorData(Map<String, dynamic> newData) {
+    // Update cumulative data with new values
+    _cumulativeSensorData.addAll(newData);
+
+    // Reset/restart the timer
+    _sensorDataTimer?.cancel();
+    _sensorDataTimer = Timer(sensorDataTimeout, () {
+      _buildAndEmitSensorData();
+    });
+
+    // If we detect a sensor cycle reset (e.g., "=== Sensor Readings ==="), emit immediately
+    if (newData.keys.any((key) => key.contains('sensor') && key.contains('readings'))) {
+      _sensorDataTimer?.cancel();
+      _buildAndEmitSensorData();
+    }
+  }
+
+  /// Build complete SensorData from accumulated values and emit it
+  void _buildAndEmitSensorData() {
+    if (_cumulativeSensorData.isEmpty) return;
+
+    try {
+      // Map accumulated data to SensorData fields
+      final mappedData = <String, dynamic>{};
+
+      for (final entry in _cumulativeSensorData.entries) {
+        final key = entry.key.toLowerCase();
+        final value = entry.value;
+
+        // Map various possible field names to standard ones
+        if (key.contains('reservoir') || key.contains('tank1') || key == 'reservoir_level') {
+          mappedData['reservoir_level'] = value;
+        } else if (key.contains('house') || key.contains('tank2') || key == 'house_tank_level') {
+          mappedData['house_tank_level'] = value;
+        } else if (key.contains('optional') || key.contains('tank3') || key == 'optional_tank') {
+          mappedData['optional_tank_level'] = value;
+        } else if (key.contains('filter') || key.contains('yl_69') || key == 'yl_69_filter') {
+          mappedData['filter_tank'] = value;
+        } else if (key.contains('turbidity') || key.contains('clarity')) {
+          mappedData['turbidity'] = value;
+        } else if (key.contains('pump') && key.contains('1') || key == 'pump_1') {
+          mappedData['pump1'] = value;
+        } else if (key.contains('pump') && key.contains('2') || key == 'pump_2') {
+          mappedData['pump2'] = value;
+        } else if (key.contains('pump') && key.contains('3') || key == 'pump_3') {
+          mappedData['pump3'] = value;
+        } else if (key.contains('battery') || key.contains('power')) {
+          mappedData['battery'] = value;
+        } else if (key.contains('alert') || key.contains('warning')) {
+          mappedData['alert'] = value;
+        }
       }
+
+      // Create raw SensorData with accumulated values
+      final rawSensorData = SensorData.fromJson({
+        'reservoir_level': mappedData['reservoir_level'] ?? 0,
+        'house_tank_level': mappedData['house_tank_level'] ?? 0,
+        'optional_tank_level': mappedData['optional_tank_level'] ?? 0,
+        'filter_tank': mappedData['filter_tank'] ?? 'unknown',
+        'turbidity': mappedData['turbidity'] ?? 0,
+        'pump1': mappedData['pump1'] ?? 'OFF',
+        'pump2': mappedData['pump2'] ?? 'OFF',
+        'pump3': mappedData['pump3'] ?? 'OFF',
+        'battery': mappedData['battery'] ?? 0,
+        'alert': mappedData['alert'],
+      });
+
+      // Apply data smoothing to filter dropouts
+      final smoothedSensorData = _dataSmoothingService.processSensorData(rawSensorData);
+      _sensorDataController.add(smoothedSensorData);
+      debugPrint('WebSocket: Built and smoothed complete SensorData from accumulated ESP data: $smoothedSensorData');
+
+      // Keep the data for next cycle (don't clear completely, just update timestamps)
+      // This way we maintain the last known state of all sensors
+
+    } catch (e) {
+      debugPrint('WebSocket: Failed to build SensorData from accumulated data: $e');
     }
   }
 
