@@ -82,8 +82,9 @@ class EspSerialData {
             final value = keyValue[1].trim();
 
             // Try to parse as number, otherwise keep as string
-            if (double.tryParse(value) != null) {
-              data[key] = double.parse(value);
+            final numericValue = _extractNumericValue(value);
+            if (numericValue != null) {
+              data[key] = numericValue;
             } else {
               data[key] = value;
             }
@@ -94,22 +95,43 @@ class EspSerialData {
       }
 
       // Parse line-based format where each line contains sensor info
-      // Example: "Reservoir Level: 75%"
+      // Example: "Reservoir Level: 75%", "Turbidity: 391 (raw)", "Optional Tank: 93 (raw) -> 2%"
       final lines = trimmed.split('\n');
       final data = <String, dynamic>{};
 
-      for (final line in lines) {
-        if (line.contains(':')) {
-          final parts = line.split(':');
+      // Single line message - treat as one line
+      if (!trimmed.contains('\n')) {
+        if (trimmed.contains(':')) {
+          final parts = trimmed.split(':');
           if (parts.length >= 2) {
-            final key = parts[0].trim().toLowerCase().replaceAll(' ', '_');
-            final valueStr = parts[1].trim().replaceAll('%', '');
+            final key = parts[0].trim().toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+            final valueStr = parts[1].trim();
 
-            // Try to parse as number
-            if (double.tryParse(valueStr) != null) {
-              data[key] = double.parse(valueStr);
+            // Extract numeric value from ESP format
+            final numericValue = _extractNumericValue(valueStr);
+            if (numericValue != null) {
+              data[key] = numericValue;
             } else {
               data[key] = valueStr;
+            }
+          }
+        }
+      } else {
+        // Multi-line message
+        for (final line in lines) {
+          if (line.contains(':')) {
+            final parts = line.split(':');
+            if (parts.length >= 2) {
+              final key = parts[0].trim().toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+              final valueStr = parts[1].trim();
+
+              // Extract numeric value from ESP format
+              final numericValue = _extractNumericValue(valueStr);
+              if (numericValue != null) {
+                data[key] = numericValue;
+              } else {
+                data[key] = valueStr;
+              }
             }
           }
         }
@@ -120,6 +142,31 @@ class EspSerialData {
       // If parsing fails, return null
       return null;
     }
+  }
+
+  /// Extract numeric value from ESP format strings
+  /// Handles formats like: "391 (raw)", "93 (raw) -> 2%", "75%", "12.5V"
+  static double? _extractNumericValue(String input) {
+    final cleaned = input.trim();
+
+    // Handle percentage after arrow: "93 (raw) -> 2%"
+    if (cleaned.contains('->')) {
+      final parts = cleaned.split('->');
+      if (parts.length >= 2) {
+        final percentPart = parts[1].trim().replaceAll('%', '').replaceAll('L', '');
+        return double.tryParse(percentPart);
+      }
+    }
+
+    // Handle raw value format: "391 (raw)"
+    if (cleaned.contains('(raw)')) {
+      final rawValue = cleaned.replaceAll('(raw)', '').trim();
+      return double.tryParse(rawValue);
+    }
+
+    // Handle standard formats: "75%", "12.5V", "45"
+    final numericOnly = cleaned.replaceAll(RegExp(r'[^\d.-]'), '');
+    return double.tryParse(numericOnly);
   }
 
   /// Convert to SensorData if possible
@@ -139,7 +186,9 @@ class EspSerialData {
           mappedData['reservoir_level'] = value;
         } else if (key.contains('house') || key.contains('tank2')) {
           mappedData['house_tank_level'] = value;
-        } else if (key.contains('filter')) {
+        } else if (key.contains('optional') || key.contains('tank3') || key == 'optional_tank') {
+          mappedData['optional_tank_level'] = value;
+        } else if (key.contains('filter') || key.contains('yl_69') || key == 'yl_69_filter') {
           mappedData['filter_tank'] = value;
         } else if (key.contains('turbidity') || key.contains('clarity')) {
           mappedData['turbidity'] = value;
@@ -147,6 +196,8 @@ class EspSerialData {
           mappedData['pump1'] = value;
         } else if (key.contains('pump2') || key == 'pump_2') {
           mappedData['pump2'] = value;
+        } else if (key.contains('pump3') || key == 'pump_3') {
+          mappedData['pump3'] = value;
         } else if (key.contains('battery') || key.contains('power')) {
           mappedData['battery'] = value;
         } else if (key.contains('alert') || key.contains('warning')) {
@@ -158,10 +209,12 @@ class EspSerialData {
       return SensorData.fromJson({
         'reservoir_level': mappedData['reservoir_level'] ?? 0,
         'house_tank_level': mappedData['house_tank_level'] ?? 0,
+        'optional_tank_level': mappedData['optional_tank_level'] ?? 0,
         'filter_tank': mappedData['filter_tank'] ?? 'unknown',
         'turbidity': mappedData['turbidity'] ?? 0,
         'pump1': mappedData['pump1'] ?? 'OFF',
         'pump2': mappedData['pump2'] ?? 'OFF',
+        'pump3': mappedData['pump3'] ?? 'OFF',
         'battery': mappedData['battery'] ?? 0,
         'alert': mappedData['alert'],
       });

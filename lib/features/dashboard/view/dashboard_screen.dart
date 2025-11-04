@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/utils/app_theme.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/utils/constants.dart';
 import '../viewmodel/dashboard_viewmodel.dart';
-import '../model/dashboard_model.dart';
 import '../widgets/sensor_card.dart';
 import '../widgets/tank_level_card.dart';
 import '../widgets/pump_status_card.dart';
@@ -78,6 +76,15 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
+                  // Optional Tank Row
+                  TankLevelCard(
+                    title: 'Optional Tank',
+                    level: viewModel.optionalTankPercentage,
+                    icon: Icons.water,
+                    isConnected: viewModel.isConnected,
+                  ),
+                  const SizedBox(height: 16),
+
                   // Water Quality and Battery Row
                   Row(
                     children: [
@@ -122,7 +129,7 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Pump Status Row
+                  // Pump Status Row 1 (Pump 1 and 2)
                   Row(
                     children: [
                       Expanded(
@@ -140,6 +147,21 @@ class DashboardScreen extends StatelessWidget {
                           isConnected: viewModel.isConnected,
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Pump Status Row 2 (Pump 3)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: PumpStatusCard(
+                          title: 'Pump 3',
+                          isOn: viewModel.isPump3On,
+                          isConnected: viewModel.isConnected,
+                        ),
+                      ),
+                      const Expanded(child: SizedBox()), // Empty space to balance the row
                     ],
                   ),
                   const SizedBox(height: 16),

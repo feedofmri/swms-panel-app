@@ -10,6 +10,7 @@ class ControlsViewModel extends ChangeNotifier {
   SensorData? _currentSensorData;
   bool _pump1IsLoading = false;
   bool _pump2IsLoading = false;
+  bool _pump3IsLoading = false;
   String? _lastCommandStatus;
 
   ControlsViewModel({
@@ -25,6 +26,7 @@ class ControlsViewModel extends ChangeNotifier {
   String get connectionStatus => _webSocketService.connectionStatus;
   bool get pump1IsLoading => _pump1IsLoading;
   bool get pump2IsLoading => _pump2IsLoading;
+  bool get pump3IsLoading => _pump3IsLoading;
   String? get lastCommandStatus => _lastCommandStatus;
   String? get lastCommandResult => _lastCommandStatus;
 
@@ -32,9 +34,10 @@ class ControlsViewModel extends ChangeNotifier {
   bool get canSendCommands => _webSocketService.isConnected;
   String get pump1Status => _currentSensorData?.pump1Status ?? 'OFF';
   String get pump2Status => _currentSensorData?.pump2Status ?? 'OFF';
+  String get pump3Status => _currentSensorData?.pump3Status ?? 'OFF';
   int get runningPumpsCount =>
-      (pump1Status == 'ON' ? 1 : 0) + (pump2Status == 'ON' ? 1 : 0);
-  bool get isAnyPumpRunning => pump1Status == 'ON' || pump2Status == 'ON';
+      (pump1Status == 'ON' ? 1 : 0) + (pump2Status == 'ON' ? 1 : 0) + (pump3Status == 'ON' ? 1 : 0);
+  bool get isAnyPumpRunning => pump1Status == 'ON' || pump2Status == 'ON' || pump3Status == 'ON';
   String get statusSummary {
     if (!isConnected) return 'Disconnected';
     if (isAnyPumpRunning) return '$runningPumpsCount pump(s) running';
@@ -106,6 +109,34 @@ class ControlsViewModel extends ChangeNotifier {
     }
   }
 
+  Future<bool> controlPump3(bool turnOn) async {
+    if (!_webSocketService.isConnected) {
+      _lastCommandStatus = 'Not connected to ESP8266';
+      notifyListeners();
+      return false;
+    }
+
+    _pump3IsLoading = true;
+    _lastCommandStatus = null;
+    notifyListeners();
+
+    try {
+      final success = await _webSocketService.controlPump('pump3', turnOn);
+      if (success) {
+        _lastCommandStatus = 'Pump 3 ${turnOn ? 'started' : 'stopped'} successfully';
+      } else {
+        _lastCommandStatus = 'Failed to control Pump 3';
+      }
+      return success;
+    } catch (e) {
+      _lastCommandStatus = 'Error controlling Pump 3: $e';
+      return false;
+    } finally {
+      _pump3IsLoading = false;
+      notifyListeners();
+    }
+  }
+
   // Methods expected by the UI
   Future<void> togglePump1() async {
     final currentlyOn = pump1Status == 'ON';
@@ -117,6 +148,11 @@ class ControlsViewModel extends ChangeNotifier {
     await controlPump2(!currentlyOn);
   }
 
+  Future<void> togglePump3() async {
+    final currentlyOn = pump3Status == 'ON';
+    await controlPump3(!currentlyOn);
+  }
+
   Future<void> emergencyStopAllPumps() async {
     _lastCommandStatus = 'Emergency stop initiated...';
     notifyListeners();
@@ -125,6 +161,7 @@ class ControlsViewModel extends ChangeNotifier {
       final results = await Future.wait([
         controlPump1(false),
         controlPump2(false),
+        controlPump3(false),
       ]);
 
       if (results.every((result) => result)) {

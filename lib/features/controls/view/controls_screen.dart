@@ -56,6 +56,7 @@ class ControlsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
 
+                // First row with Pump 1 and 2
                 Row(
                   children: [
                     Expanded(
@@ -77,6 +78,23 @@ class ControlsScreen extends StatelessWidget {
                         onToggle: () => _handlePumpToggle(context, viewModel, 2),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Second row with Pump 3
+                Row(
+                  children: [
+                    Expanded(
+                      child: PumpControlCard(
+                        pumpName: 'Pump 3',
+                        pumpStatus: _stringToPumpStatus(viewModel.pump3Status),
+                        isConnected: viewModel.isConnected,
+                        canControl: viewModel.canSendCommands,
+                        onToggle: () => _handlePumpToggle(context, viewModel, 3),
+                      ),
+                    ),
+                    const Expanded(child: SizedBox()), // Empty space to balance the row
                   ],
                 ),
 
@@ -206,7 +224,7 @@ class ControlsScreen extends StatelessWidget {
                   child: _buildStatusItem(
                     context,
                     'Active Pumps',
-                    '${viewModel.runningPumpsCount}/2',
+                    '${viewModel.runningPumpsCount}/3',
                     viewModel.isAnyPumpRunning ? AppTheme.successColor : AppTheme.disconnectedColor,
                   ),
                 ),
@@ -264,9 +282,12 @@ class ControlsScreen extends StatelessWidget {
     if (pumpNumber == 1) {
       await viewModel.togglePump1();
       success = true; // togglePump1 returns void, assume success
-    } else {
+    } else if (pumpNumber == 2) {
       await viewModel.togglePump2();
       success = true; // togglePump2 returns void, assume success
+    } else {
+      await viewModel.togglePump3();
+      success = true; // togglePump3 returns void, assume success
     }
 
     if (context.mounted) {

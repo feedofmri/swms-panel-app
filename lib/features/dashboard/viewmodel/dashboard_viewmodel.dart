@@ -30,12 +30,14 @@ class DashboardViewModel extends ChangeNotifier {
   // Sensor data getters that the UI expects
   double get reservoirPercentage => _dashboardModel.currentData?.reservoirLevel ?? 0.0;
   double get houseTankPercentage => _dashboardModel.currentData?.houseTankLevel ?? 0.0;
+  double get optionalTankPercentage => _dashboardModel.currentData?.optionalTankLevel ?? 0.0;
   bool get isTurbidityGood => (_dashboardModel.currentData?.turbidity ?? 0.0) < 5.0;
   double get turbidityValue => _dashboardModel.currentData?.turbidity ?? 0.0;
   double get batteryVoltage => _dashboardModel.currentData?.battery ?? 0.0;
   String get filterTankStatus => _dashboardModel.currentData?.filterTank ?? 'unknown';
   bool get isPump1On => (_dashboardModel.currentData?.pump1Status ?? 'OFF').toUpperCase() == 'ON';
   bool get isPump2On => (_dashboardModel.currentData?.pump2Status ?? 'OFF').toUpperCase() == 'ON';
+  bool get isPump3On => (_dashboardModel.currentData?.pump3Status ?? 'OFF').toUpperCase() == 'ON';
   String? get currentAlert => _dashboardModel.currentData?.alert;
   String get systemStatus => _getSystemStatus();
 
@@ -43,7 +45,7 @@ class DashboardViewModel extends ChangeNotifier {
     if (!isConnected) return 'Disconnected';
     if (_dashboardModel.currentData == null) return 'No Data';
     if (currentAlert != null) return 'Alert: $currentAlert';
-    if (isPump1On || isPump2On) return 'Active';
+    if (isPump1On || isPump2On || isPump3On) return 'Active';
     return 'Normal';
   }
 
@@ -117,11 +119,18 @@ class DashboardViewModel extends ChangeNotifier {
               case 'house':
                 data['house_tank_level'] = double.tryParse(value) ?? 0;
                 break;
+              case 'tank3':
+              case 'optional':
+                data['optional_tank_level'] = double.tryParse(value) ?? 0;
+                break;
               case 'pump1':
                 data['pump1'] = value.toUpperCase();
                 break;
               case 'pump2':
                 data['pump2'] = value.toUpperCase();
+                break;
+              case 'pump3':
+                data['pump3'] = value.toUpperCase();
                 break;
               case 'battery':
                 data['battery'] = double.tryParse(value) ?? 0;
@@ -140,10 +149,12 @@ class DashboardViewModel extends ChangeNotifier {
           return SensorData.fromJson({
             'reservoir_level': data['reservoir_level'] ?? 0,
             'house_tank_level': data['house_tank_level'] ?? 0,
+            'optional_tank_level': data['optional_tank_level'] ?? 0,
             'filter_tank': data['filter_tank'] ?? 'unknown',
             'turbidity': data['turbidity'] ?? 0,
             'pump1': data['pump1'] ?? 'OFF',
             'pump2': data['pump2'] ?? 'OFF',
+            'pump3': data['pump3'] ?? 'OFF',
             'battery': data['battery'] ?? 0,
           });
         }
@@ -155,10 +166,12 @@ class DashboardViewModel extends ChangeNotifier {
       final data = <String, dynamic>{
         'reservoir_level': 0.0,
         'house_tank_level': 0.0,
+        'optional_tank_level': 0.0,
         'filter_tank': 'unknown',
         'turbidity': 0.0,
         'pump1': 'OFF',
         'pump2': 'OFF',
+        'pump3': 'OFF',
         'battery': 0.0,
       };
 
@@ -173,10 +186,14 @@ class DashboardViewModel extends ChangeNotifier {
               data['reservoir_level'] = double.tryParse(valueStr) ?? 0;
             } else if (key.contains('house') || key.contains('tank 2')) {
               data['house_tank_level'] = double.tryParse(valueStr) ?? 0;
+            } else if (key.contains('optional') || key.contains('tank 3')) {
+              data['optional_tank_level'] = double.tryParse(valueStr) ?? 0;
             } else if (key.contains('pump 1') || key.contains('pump1')) {
               data['pump1'] = valueStr.toUpperCase();
             } else if (key.contains('pump 2') || key.contains('pump2')) {
               data['pump2'] = valueStr.toUpperCase();
+            } else if (key.contains('pump 3') || key.contains('pump3')) {
+              data['pump3'] = valueStr.toUpperCase();
             } else if (key.contains('battery')) {
               data['battery'] = double.tryParse(valueStr) ?? 0;
             } else if (key.contains('turbidity')) {
